@@ -88,6 +88,7 @@ int main() {
         imguiManager.DrawObjectController(ssbo);
 		imguiManager.DrawObjectsList(ssbo);
 
+        ssbo.update();
         raytracingShader.use();
         raytracingShader.setInt("numObjects", ssbo.objects.size());
         raytracingShader.setVec3("cameraPos", glm::vec3(0.0f, 0.0f, 0.0f));
@@ -95,7 +96,6 @@ int main() {
         raytracingShader.setVec3("cameraUp", glm::vec3(0.0f, 1.0f, 0.0f));
         raytracingShader.setVec3("cameraRight", glm::vec3(1.0f, 0.0f, 0.0f));
 
-        ssbo.update();
         glDispatchCompute(
             (WIDTH + 15) / 16,  // 向上取整
             (HEIGHT + 15) / 16,

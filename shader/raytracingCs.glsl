@@ -103,16 +103,8 @@ void main() {
     if (intersectObjects(ray, hitColor, hitNormal, hitT)) {
         vec3 hitPoint = ray.origin + ray.direction * hitT;
         vec3 lighting = computeLighting(hitPoint, hitNormal, hitColor);
-        imageStore(outputImage, pixelCoords, vec4(objects[0].radius));
+        imageStore(outputImage, pixelCoords, vec4(lighting, 1.0));
     } else {
         imageStore(outputImage, pixelCoords, vec4(0.0, 0.0, 0.0, 1.0));
     }
-    // imageStore(outputImage, pixelCoords, vec4(numObjects / 10.0)); 
-    // 在计算着色器main函数开头添加：
-    //if (gl_GlobalInvocationID.x == 0 && gl_GlobalInvocationID.y == 0) {
-    //    if (numObjects > 0) {
-    //        Object firstObj = objects[1];
-    //        imageStore(outputImage, ivec2(0,0), vec4(firstObj.position, 1.0));
-    //    }
-    //}
 }
