@@ -17,7 +17,7 @@ const float quadVertices[] = {
 };
 
 int main() {
-    // 初始化GLFW和OpenGL上下文
+
     if (!glfwInit()) {
         std::cerr << "Failed to initialize GLFW" << std::endl;
         return -1;
@@ -41,11 +41,9 @@ int main() {
         return -1;
     }
 
-    // 创建着色器程序
     Shader raytracingShader("shader/raytracingCs.glsl");
     Shader outputShader("shader/outputVs.glsl", "shader/outputFs.glsl");
 
-    // 创建纹理
     GLuint outputTex;
     glGenTextures(1, &outputTex);
     glBindTexture(GL_TEXTURE_2D, outputTex);
@@ -54,7 +52,6 @@ int main() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glBindImageTexture(0, outputTex, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
 
-    // 创建全屏四边形的VAO和VBO
     GLuint VAO, VBO;
     glGenVertexArrays(1, &VAO);
     glGenBuffers(1, &VBO);
@@ -67,7 +64,7 @@ int main() {
     glEnableVertexAttribArray(1);
 
     while (!glfwWindowShouldClose(window)) {
-        // 使用计算着色器
+
         raytracingShader.use();
         glBindTexture(GL_TEXTURE_2D, outputTex);
         raytracingShader.setVec3("cameraDir", glm::vec3(0.0f, 0.0f, -1.0f));
@@ -77,7 +74,6 @@ int main() {
         glDispatchCompute(800 / 16, 600 / 16, 1);
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
-        // 使用渲染着色器
         glClear(GL_COLOR_BUFFER_BIT);
 
         outputShader.use();
