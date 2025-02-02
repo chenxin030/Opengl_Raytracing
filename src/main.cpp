@@ -1,4 +1,6 @@
 #include "Shader.h"
+#include "SSBO.h"
+#include "ImGUIManager.h"
 #include <GLFW/glfw3.h>
 
 const int WIDTH = 800;
@@ -41,8 +43,8 @@ int main() {
         return -1;
     }
 
-    Shader raytracingShader("shader/raytracingCs.glsl");
-    Shader outputShader("shader/outputVs.glsl", "shader/outputFs.glsl");
+    Shader raytracingShader("E:/vsProject/opengl_rt/shader/raytracingCs.glsl");
+    Shader outputShader("E:/vsProject/opengl_rt/shader/outputVs.glsl", "E:/vsProject/opengl_rt/shader/outputFs.glsl");
 
     GLuint outputTex;
     glGenTextures(1, &outputTex);
@@ -63,15 +65,42 @@ int main() {
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
     glEnableVertexAttribArray(1);
 
+    ImGuiManager imguiManager(window);
+
+    // 创建场景
+    raytracingShader.use();
+    SSBO ssbo;
+    ssbo.objects.clear();
+    Object obj{
+        0,
+        glm::vec3(0.0f, 0.0f, -5.0f),
+        glm::vec3(1.0f, 0.0f, 0.0f),
+        1.0f,    // radius
+        glm::vec3(0.0f), // normal (unused)
+        0.0f     // distance (unused)
+    };
+    ssbo.objects.push_back(obj);
+    ssbo.update();
+
     while (!glfwWindowShouldClose(window)) {
 
+        imguiManager.BeginFrame();
+        imguiManager.DrawObjectController(ssbo);
+		imguiManager.DrawObjectsList(ssbo);
+
         raytracingShader.use();
-        glBindTexture(GL_TEXTURE_2D, outputTex);
+        raytracingShader.setInt("numObjects", ssbo.objects.size());
+        raytracingShader.setVec3("cameraPos", glm::vec3(0.0f, 0.0f, 0.0f));
         raytracingShader.setVec3("cameraDir", glm::vec3(0.0f, 0.0f, -1.0f));
         raytracingShader.setVec3("cameraUp", glm::vec3(0.0f, 1.0f, 0.0f));
         raytracingShader.setVec3("cameraRight", glm::vec3(1.0f, 0.0f, 0.0f));
 
-        glDispatchCompute(800 / 16, 600 / 16, 1);
+        ssbo.update();
+        glDispatchCompute(
+            (WIDTH + 15) / 16,  // 向上取整
+            (HEIGHT + 15) / 16,
+            1
+        );
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
         glClear(GL_COLOR_BUFFER_BIT);
@@ -82,8 +111,12 @@ int main() {
         glBindVertexArray(VAO);
         glDrawArrays(GL_TRIANGLES, 0, 6);
 
+        imguiManager.EndFrame();
+
         glfwSwapBuffers(window);
         glfwPollEvents();
+
+
     }
 
     glDeleteTextures(1, &outputTex);

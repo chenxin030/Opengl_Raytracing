@@ -127,10 +127,19 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\ImGUIManager.cpp" />
+    <ClCompile Include="src\imgui_impl_glfw.cpp" />
+    <ClCompile Include="src\imgui_impl_opengl3.cpp" />
     <ClCompile Include="src\main.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\ImGUIManager.h" />
+    <ClInclude Include="src\imgui_impl_glfw.h" />
+    <ClInclude Include="src\imgui_impl_opengl3.h" />
+    <ClInclude Include="src\imgui_impl_opengl3_loader.h" />
+    <ClInclude Include="src\Object.h" />
     <ClInclude Include="src\Shader.h" />
+    <ClInclude Include="src\SSBO.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
