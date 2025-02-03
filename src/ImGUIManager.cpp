@@ -5,7 +5,7 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 
-ImGuiManager::ImGuiManager(GLFWwindow* window) {
+ImGuiManager::ImGuiManager(GLFWwindow* window) : m_Window(window) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
@@ -155,6 +155,9 @@ void ImGuiManager::DrawCameraControls(Camera& camera) {
     ImGui::Text("FOV");
     ImGui::SliderFloat("##fov", &camera.FOV, 1.0f, 90.0f);
 
+    // 摄像头移速
+    ImGui::SliderFloat("Move Speed", &camera.MoveSpeed, 1.0f, 20.0f);
+
     ImGui::End();
 }
 
@@ -200,6 +203,34 @@ void ImGuiManager::DrawGlobalMessage() {
         ImGui::TextColored(color, "%.1f", fps);
     }
     ImGui::End();
+}
+
+void ImGuiManager::HandleCameraMovement(Camera& camera, float deltaTime)
+{
+    // 只在未激活ImGui时处理输入
+    if (!ImGui::GetIO().WantCaptureKeyboard && !ImGui::GetIO().WantCaptureMouse) {
+        // 鼠标右键检测
+        if (glfwGetMouseButton(m_Window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
+            // WASD移动逻辑
+            glm::vec3 moveDir(0.0f);
+            if (glfwGetKey(m_Window, GLFW_KEY_W) == GLFW_PRESS)
+                moveDir += camera.Front;
+            if (glfwGetKey(m_Window, GLFW_KEY_S) == GLFW_PRESS)
+                moveDir -= camera.Front;
+            if (glfwGetKey(m_Window, GLFW_KEY_A) == GLFW_PRESS)
+                moveDir -= camera.Right;
+            if (glfwGetKey(m_Window, GLFW_KEY_D) == GLFW_PRESS)
+                moveDir += camera.Right;
+            if (glfwGetKey(m_Window, GLFW_KEY_Q) == GLFW_PRESS)
+                moveDir += camera.Up;
+            if (glfwGetKey(m_Window, GLFW_KEY_E) == GLFW_PRESS)
+                moveDir -= camera.Up;
+
+            if (glm::length(moveDir) > 0.0f) {
+                camera.ProcessMovement(glm::normalize(moveDir), deltaTime);
+            }
+        }
+    }
 }
 
 

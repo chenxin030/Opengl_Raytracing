@@ -3,6 +3,7 @@
 #include "ImGUIManager.h"
 #include <GLFW/glfw3.h>
 #include "Camera.h"
+#include <imgui.h>
 
 const int WIDTH = 800;
 const int HEIGHT = 600;
@@ -11,6 +12,8 @@ Camera camera;
 bool firstMouse = true;
 float lastX = WIDTH / 2.0f;
 float lastY = HEIGHT / 2.0f;
+float deltaTime = 0.0f;
+float lastFrame = 0.0f;
 
 // 全屏四边形的顶点数据
 const float quadVertices[] = {
@@ -125,8 +128,17 @@ int main() {
 
     while (!glfwWindowShouldClose(window)) {
 
-        imguiManager.BeginFrame();
+        // 计算时间差
+        float currentFrame = glfwGetTime();
+        deltaTime = currentFrame - lastFrame;
+        lastFrame = currentFrame;
 
+        imguiManager.BeginFrame();
+		imguiManager.HandleCameraMovement(camera, deltaTime);
+        imguiManager.DrawGlobalMessage();
+        imguiManager.DrawObjectsList(ssbo);
+        imguiManager.DrawCameraControls(camera);
+        
         raytracingShader.use();
         raytracingShader.setInt("numObjects", ssbo.objects.size());
         raytracingShader.setVec3("cameraPos", camera.Position);
@@ -134,10 +146,6 @@ int main() {
         raytracingShader.setVec3("cameraUp", camera.Up);
         raytracingShader.setVec3("cameraRight", camera.Right);
         raytracingShader.setFloat("fov", camera.FOV);
-
-        imguiManager.DrawGlobalMessage();
-        imguiManager.DrawObjectsList(ssbo);
-        imguiManager.DrawCameraControls(camera);
 
         glDispatchCompute(
             (WIDTH + 15) / 16,  // 向上取整
@@ -158,7 +166,6 @@ int main() {
 
         glfwSwapBuffers(window);
         glfwPollEvents();
-
 
     }
 

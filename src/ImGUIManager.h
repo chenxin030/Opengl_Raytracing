@@ -17,6 +17,11 @@ public:
     void DrawCameraControls(Camera& camera);
     void DrawGlobalMessage();
 
+	void HandleCameraMovement(Camera& camera, float deltaTime);
+
 private:
+
+    GLFWwindow* m_Window;
+
     void SetupStyle();
 };
