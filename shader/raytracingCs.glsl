@@ -25,6 +25,7 @@ struct Light {
 
 layout(local_size_x = 16, local_size_y = 16) in;
 layout(rgba32f, binding = 0) uniform image2D outputImage;
+
 layout(std430, binding = 0) buffer Objects {
     Object objects[];
 };
@@ -57,14 +58,15 @@ vec3 computeLighting(vec3 point, vec3 normal, vec3 albedo) {
             lightDir = normalize(-light.direction);
         }
         
+        // Blinn-Phong Shading
         // 漫反射
         float diff = max(dot(normal, lightDir), 0.0);
         vec3 diffuse = diff * light.color * light.intensity * albedo;
         
-        // 高光（示例）
+        // 高光
         vec3 viewDir = normalize(cameraPos - point);
-        vec3 reflectDir = reflect(-lightDir, normal);
-        float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32.0);
+        vec3 halfwayDir = normalize(lightDir + viewDir);  
+        float spec = pow(max(dot(normal, halfwayDir), 0.0), 32.0);
         vec3 specular = spec * light.color * light.intensity;
         
         totalLight += (diffuse + specular) * attenuation;
