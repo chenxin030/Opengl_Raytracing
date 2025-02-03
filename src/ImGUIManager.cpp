@@ -33,8 +33,9 @@ void ImGuiManager::EndFrame() {
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
-void ImGuiManager::DrawObjectController(SSBO& ssbo) {
-    ImGui::Begin("Object Controller");
+void ImGuiManager::DrawObjectsList(SSBO& ssbo)
+{
+    ImGui::Begin("Scene Objects");
 
     static int objType = 0;
     static float pos[3] = { 0.0f, 0.0f, -5.0f };
@@ -75,17 +76,10 @@ void ImGuiManager::DrawObjectController(SSBO& ssbo) {
         else if (objType == 1) {
             newObj.normal = glm::normalize(glm::vec3(normal[0], normal[1], normal[2]));
             newObj.distance = distance;
-        } 
+        }
         ssbo.objects.push_back(newObj);
         ssbo.update();
     }
-
-    ImGui::End();
-}
-
-void ImGuiManager::DrawObjectsList(SSBO& ssbo)
-{
-    ImGui::Begin("Scene Objects");
 
     // 显示物体总数
     ImGui::Text("Total Objects: %d", ssbo.objects.size());
@@ -146,7 +140,67 @@ void ImGuiManager::DrawObjectsList(SSBO& ssbo)
     ImGui::End();
 }
 
+void ImGuiManager::DrawCameraControls(Camera& camera) {
+    ImGui::Begin("Camera Controls");
 
+    // 位置控制
+    ImGui::Text("Position");
+    ImGui::SliderFloat3("##pos", &camera.Position.x, -10.0f, 10.0f);
+
+    // 方向显示
+    ImGui::Text("Direction: (%.2f, %.2f, %.2f)",
+        camera.Front.x, camera.Front.y, camera.Front.z);
+
+    // FOV控制
+    ImGui::Text("FOV");
+    ImGui::SliderFloat("##fov", &camera.FOV, 1.0f, 90.0f);
+
+    ImGui::End();
+}
+
+// ImGuiManager.cpp
+void ImGuiManager::DrawGlobalMessage() {
+    // 设置窗口属性：无标题栏、透明背景、固定位置
+    ImGuiWindowFlags flags =
+        ImGuiWindowFlags_NoDecoration |
+        ImGuiWindowFlags_NoBackground |
+        ImGuiWindowFlags_AlwaysAutoResize |
+        ImGuiWindowFlags_NoSavedSettings |
+        ImGuiWindowFlags_NoFocusOnAppearing |
+        ImGuiWindowFlags_NoMove;
+
+    // 设置窗口位置在右上角
+    const float PAD = 10.0f;
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImVec2 work_pos = viewport->WorkPos;
+    ImVec2 work_size = viewport->WorkSize;
+    ImVec2 window_pos = ImVec2(work_pos.x + work_size.x - PAD, work_pos.y + PAD);
+    ImVec2 window_pos_pivot = ImVec2(1.0f, 0.0f);
+    ImGui::SetNextWindowPos(window_pos, ImGuiCond_Always, window_pos_pivot);
+
+    // 绘制窗口
+    ImGui::SetNextWindowBgAlpha(0.0f); // 完全透明背景
+    if (ImGui::Begin("FPS Overlay", nullptr, flags)) {
+        float fps = ImGui::GetIO().Framerate; // 直接获取帧率
+        // 动态颜色设置
+        ImVec4 color;
+        if (fps < 30.0f) {
+            color = ImVec4(1.0f, 0.0f, 0.0f, 1.0f);  // 红色
+        }
+        else if (fps <= 60.0f) {
+            color = ImVec4(1.0f, 1.0f, 0.0f, 1.0f);  // 黄色
+        }
+        else {
+            color = ImVec4(0.0f, 1.0f, 0.0f, 1.0f);  // 绿色
+        }
+
+        // 带颜色文本显示
+        ImGui::TextColored(color, "FPS: ");
+        ImGui::SameLine();
+        ImGui::TextColored(color, "%.1f", fps);
+    }
+    ImGui::End();
+}
 
 
 void ImGuiManager::SetupStyle() {

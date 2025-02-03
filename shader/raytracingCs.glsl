@@ -26,6 +26,7 @@ uniform vec3 cameraUp;
 uniform vec3 cameraRight;
 uniform float fov;
 uniform int numObjects;
+uniform vec3 BackGroundColor;
 
 vec3 computeLighting(vec3 point, vec3 normal, vec3 color) {
     vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
@@ -105,6 +106,6 @@ void main() {
         vec3 lighting = computeLighting(hitPoint, hitNormal, hitColor);
         imageStore(outputImage, pixelCoords, vec4(lighting, 1.0));
     } else {
-        imageStore(outputImage, pixelCoords, vec4(0.0, 0.0, 0.0, 1.0));
+        imageStore(outputImage, pixelCoords, vec4(BackGroundColor, 1.0));
     }
 }

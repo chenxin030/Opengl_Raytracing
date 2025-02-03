@@ -2,9 +2,15 @@
 #include "SSBO.h"
 #include "ImGUIManager.h"
 #include <GLFW/glfw3.h>
+#include "Camera.h"
 
 const int WIDTH = 800;
 const int HEIGHT = 600;
+
+Camera camera;
+bool firstMouse = true;
+float lastX = WIDTH / 2.0f;
+float lastY = HEIGHT / 2.0f;
 
 // 全屏四边形的顶点数据
 const float quadVertices[] = {
@@ -17,6 +23,41 @@ const float quadVertices[] = {
      1.0f, -1.0f,  1.0f, 0.0f,
      1.0f,  1.0f,  1.0f, 1.0f
 };
+
+// 鼠标回调函数
+void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
+    if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
+        if (firstMouse) {
+            lastX = xpos;
+            lastY = ypos;
+            firstMouse = false;
+        }
+
+        float xoffset = (xpos - lastX) * camera.Sensitivity;
+        float yoffset = (lastY - ypos) * camera.Sensitivity;
+        lastX = xpos;
+        lastY = ypos;
+
+        camera.Yaw += xoffset;
+        camera.Pitch += yoffset;
+
+        // 限制俯仰角
+        if (camera.Pitch > 89.0f) camera.Pitch = 89.0f;
+        if (camera.Pitch < -89.0f) camera.Pitch = -89.0f;
+
+        camera.UpdateVectors();
+    }
+    else {
+        firstMouse = true;
+    }
+}
+
+// 滚轮回调函数
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
+    camera.FOV -= (float)yoffset * camera.ZoomSpeed;
+    if (camera.FOV < 1.0f) camera.FOV = 1.0f;
+    if (camera.FOV > 90.0f) camera.FOV = 90.0f;
+}
 
 int main() {
 
@@ -43,6 +84,9 @@ int main() {
         return -1;
     }
 
+    glfwSetCursorPosCallback(window, mouse_callback);
+    glfwSetScrollCallback(window, scroll_callback);
+
     Shader raytracingShader("E:/vsProject/opengl_rt/shader/raytracingCs.glsl");
     Shader outputShader("E:/vsProject/opengl_rt/shader/outputVs.glsl", "E:/vsProject/opengl_rt/shader/outputFs.glsl");
 
@@ -68,33 +112,32 @@ int main() {
     ImGuiManager imguiManager(window);
 
     // 创建场景
-    raytracingShader.use();
     SSBO ssbo;
-    ssbo.objects.clear();
-    Object obj{
+    ssbo.objects.push_back({
         0,
         glm::vec3(0.0f, 0.0f, -5.0f),
         glm::vec3(1.0f, 0.0f, 0.0f),
         1.0f,    // radius
         glm::vec3(0.0f), // normal (unused)
         0.0f     // distance (unused)
-    };
-    ssbo.objects.push_back(obj);
+        });
     ssbo.update();
 
     while (!glfwWindowShouldClose(window)) {
 
         imguiManager.BeginFrame();
-        imguiManager.DrawObjectController(ssbo);
-		imguiManager.DrawObjectsList(ssbo);
 
-        ssbo.update();
         raytracingShader.use();
         raytracingShader.setInt("numObjects", ssbo.objects.size());
-        raytracingShader.setVec3("cameraPos", glm::vec3(0.0f, 0.0f, 0.0f));
-        raytracingShader.setVec3("cameraDir", glm::vec3(0.0f, 0.0f, -1.0f));
-        raytracingShader.setVec3("cameraUp", glm::vec3(0.0f, 1.0f, 0.0f));
-        raytracingShader.setVec3("cameraRight", glm::vec3(1.0f, 0.0f, 0.0f));
+        raytracingShader.setVec3("cameraPos", camera.Position);
+        raytracingShader.setVec3("cameraDir", camera.Front);
+        raytracingShader.setVec3("cameraUp", camera.Up);
+        raytracingShader.setVec3("cameraRight", camera.Right);
+        raytracingShader.setFloat("fov", camera.FOV);
+
+        imguiManager.DrawGlobalMessage();
+        imguiManager.DrawObjectsList(ssbo);
+        imguiManager.DrawCameraControls(camera);
 
         glDispatchCompute(
             (WIDTH + 15) / 16,  // 向上取整
