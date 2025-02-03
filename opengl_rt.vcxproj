@@ -138,6 +138,8 @@
     <ClInclude Include="src\imgui_impl_glfw.h" />
     <ClInclude Include="src\imgui_impl_opengl3.h" />
     <ClInclude Include="src\imgui_impl_opengl3_loader.h" />
+    <ClInclude Include="src\Light.h" />
+    <ClInclude Include="src\LightSSBO.h" />
     <ClInclude Include="src\Object.h" />
     <ClInclude Include="src\Shader.h" />
     <ClInclude Include="src\SSBO.h" />

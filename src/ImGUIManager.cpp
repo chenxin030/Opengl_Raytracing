@@ -162,7 +162,96 @@ void ImGuiManager::DrawCameraControls(Camera& camera) {
 }
 
 // ImGuiManager.cpp
-void ImGuiManager::DrawGlobalMessage() {
+void ImGuiManager::DrawLightController(LightSSBO& lightSSBO) {
+    ImGui::Begin("Light Controller");
+
+    static int lightType = 0;
+    static float pos[3] = { 0.0f, 3.0f, 0.0f };
+    static float color[3] = { 1.0f, 1.0f, 1.0f };
+    static float intensity = 1.0f;
+    static float radius = 5.0f;
+
+    // 光源类型选择
+    ImGui::RadioButton("Point", &lightType, 0);
+    ImGui::SameLine();
+    ImGui::RadioButton("Directional", &lightType, 1);
+
+    // 通用属性
+    ImGui::ColorEdit3("Color", color);
+    ImGui::SliderFloat("Intensity", &intensity, 0.1f, 10.0f);
+
+    // 类型特定属性
+    static float dir[3];
+    if (lightType == 0) {
+        ImGui::InputFloat3("Position", pos);
+        ImGui::SliderFloat("Radius", &radius, 1.0f, 20.0f);
+    }
+    else {
+        dir[0] = 0.0f; dir[1] = -1.0f; dir[2] = 0.0f;
+        ImGui::InputFloat3("Direction", dir);
+    }
+
+    // 添加光源按钮
+    if (ImGui::Button("Add Light")) {
+        Light newLight;
+        newLight.type = (lightType == 0) ? LightType::POINT : LightType::DIRECTIONAL;
+        newLight.color = glm::vec3(color[0], color[1], color[2]);
+        newLight.intensity = intensity;
+
+        if (lightType == 0) {
+            newLight.position = glm::vec3(pos[0], pos[1], pos[2]);
+            newLight.radius = radius;
+        }
+        else {
+            newLight.direction = glm::vec3(dir[0], dir[1], dir[2]);
+        }
+
+        lightSSBO.lights.push_back(newLight);
+        lightSSBO.update();
+    }
+
+    // 光源列表
+    ImGui::Separator();
+    ImGui::Text("Lights (%d)", lightSSBO.lights.size());
+
+    for (int i = 0; i < lightSSBO.lights.size(); ++i) {
+        ImGui::PushID(i);
+        Light& light = lightSSBO.lights[i];
+
+        if (ImGui::TreeNodeEx((void*)(intptr_t)i, ImGuiTreeNodeFlags_DefaultOpen,
+            "Light %d: %s", i, (light.type == LightType::POINT) ? "Point" : "Directional"))
+        {
+            // 编辑属性
+            ImGui::ColorEdit3("Color", &light.color.r);
+            ImGui::SliderFloat("Intensity", &light.intensity, 0.1f, 10.0f);
+
+            if (light.type == LightType::POINT) {
+                ImGui::InputFloat3("Position", &light.position.x);
+                ImGui::SliderFloat("Radius", &light.radius, 1.0f, 20.0f);
+            }
+            else {
+                ImGui::InputFloat3("Direction", &light.direction.x);
+            }
+
+            // 删除按钮
+            if (ImGui::SmallButton("Delete")) {
+                lightSSBO.lights.erase(lightSSBO.lights.begin() + i);
+                lightSSBO.update();
+                ImGui::TreePop();
+                ImGui::PopID();
+                break;
+            }
+
+            ImGui::TreePop();
+        }
+        ImGui::PopID();
+    }
+
+    ImGui::End();
+}
+
+// ImGuiManager.cpp
+void ImGuiManager::DrawFPS() {
     // 设置窗口属性：无标题栏、透明背景、固定位置
     ImGuiWindowFlags flags =
         ImGuiWindowFlags_NoDecoration |
@@ -209,9 +298,9 @@ void ImGuiManager::HandleCameraMovement(Camera& camera, float deltaTime)
 {
     // 只在未激活ImGui时处理输入
     if (!ImGui::GetIO().WantCaptureKeyboard && !ImGui::GetIO().WantCaptureMouse) {
-        // 鼠标右键检测
+        // 按住右键才能移动鼠标
         if (glfwGetMouseButton(m_Window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
-            // WASD移动逻辑
+            // 前后移动
             glm::vec3 moveDir(0.0f);
             if (glfwGetKey(m_Window, GLFW_KEY_W) == GLFW_PRESS)
                 moveDir += camera.Front;
@@ -221,6 +310,7 @@ void ImGuiManager::HandleCameraMovement(Camera& camera, float deltaTime)
                 moveDir -= camera.Right;
             if (glfwGetKey(m_Window, GLFW_KEY_D) == GLFW_PRESS)
                 moveDir += camera.Right;
+            // 上下移动
             if (glfwGetKey(m_Window, GLFW_KEY_Q) == GLFW_PRESS)
                 moveDir += camera.Up;
             if (glfwGetKey(m_Window, GLFW_KEY_E) == GLFW_PRESS)
@@ -232,7 +322,6 @@ void ImGuiManager::HandleCameraMovement(Camera& camera, float deltaTime)
         }
     }
 }
-
 
 void ImGuiManager::SetupStyle() {
     ImGui::StyleColorsDark();

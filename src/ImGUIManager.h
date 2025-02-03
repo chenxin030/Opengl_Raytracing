@@ -2,6 +2,7 @@
 #pragma once
 #include <GLFW/glfw3.h>
 #include "Camera.h"
+#include "LightSSBO.h"
 
 class SSBO;
 
@@ -15,7 +16,8 @@ public:
 
     void DrawObjectsList(class SSBO& ssbo);
     void DrawCameraControls(Camera& camera);
-    void DrawGlobalMessage();
+    void DrawLightController(LightSSBO& lightSSBO);
+    void DrawFPS();
 
 	void HandleCameraMovement(Camera& camera, float deltaTime);
 

@@ -14,10 +14,22 @@ struct Object {
     float distance; // 平面
 };
 
+struct Light {
+    int type;            // 0=点光源, 1=定向光
+    vec3 position;      
+    vec3 direction;     
+    vec3 color;         
+    float intensity;    
+    float radius;       
+};
+
 layout(local_size_x = 16, local_size_y = 16) in;
 layout(rgba32f, binding = 0) uniform image2D outputImage;
 layout(std430, binding = 0) buffer Objects {
     Object objects[];
+};
+layout(std430, binding = 1) buffer Lights {
+    Light lights[];
 };
 
 uniform vec3 cameraPos;
@@ -28,18 +40,37 @@ uniform float fov;
 uniform int numObjects;
 uniform vec3 BackGroundColor;
 
-vec3 computeLighting(vec3 point, vec3 normal, vec3 color) {
-    vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
-    vec3 viewDir = normalize(cameraPos - point);
-    vec3 reflectDir = reflect(-lightDir, normal);
-
-    float diff = max(dot(normal, lightDir), 0.0);
-    vec3 diffuse = diff * color;
-
-    float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32.0);
-    vec3 specular = spec * vec3(1.0);
-
-    return diffuse + specular; 
+vec3 computeLighting(vec3 point, vec3 normal, vec3 albedo) {
+    vec3 totalLight = vec3(0.0);
+    
+    for (int i = 0; i < lights.length(); i++) {
+        Light light = lights[i];
+        vec3 lightDir;
+        float attenuation = 1.0;
+        
+        if (light.type == 0) { // 点光源
+            lightDir = light.position - point;
+            float distance = length(lightDir);
+            attenuation = 1.0 / (1.0 + 0.1 * distance + 0.01 * distance * distance);
+            lightDir = normalize(lightDir);
+        } else { // 定向光
+            lightDir = normalize(-light.direction);
+        }
+        
+        // 漫反射
+        float diff = max(dot(normal, lightDir), 0.0);
+        vec3 diffuse = diff * light.color * light.intensity * albedo;
+        
+        // 高光（示例）
+        vec3 viewDir = normalize(cameraPos - point);
+        vec3 reflectDir = reflect(-lightDir, normal);
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32.0);
+        vec3 specular = spec * light.color * light.intensity;
+        
+        totalLight += (diffuse + specular) * attenuation;
+    }
+    
+    return totalLight;
 }
 
 bool intersectSphere(Ray ray, Object obj, out float t) {

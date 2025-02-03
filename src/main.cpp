@@ -126,6 +126,18 @@ int main() {
         });
     ssbo.update();
 
+    LightSSBO lightSSBO;
+
+    // 添加默认光源
+    Light defaultLight;
+    defaultLight.type = LightType::POINT;
+    defaultLight.position = glm::vec3(0.0f, 3.0f, 0.0f);
+    defaultLight.color = glm::vec3(1.0f);
+    defaultLight.intensity = 1.0f;
+    defaultLight.radius = 10.0f;
+    lightSSBO.lights.push_back(defaultLight);
+    lightSSBO.update();
+
     while (!glfwWindowShouldClose(window)) {
 
         // 计算时间差
@@ -135,8 +147,9 @@ int main() {
 
         imguiManager.BeginFrame();
 		imguiManager.HandleCameraMovement(camera, deltaTime);
-        imguiManager.DrawGlobalMessage();
+        imguiManager.DrawFPS();
         imguiManager.DrawObjectsList(ssbo);
+        imguiManager.DrawLightController(lightSSBO);
         imguiManager.DrawCameraControls(camera);
         
         raytracingShader.use();
