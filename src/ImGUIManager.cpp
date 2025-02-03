@@ -4,6 +4,7 @@
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
+#include "TextureLoader.h"
 
 ImGuiManager::ImGuiManager(GLFWwindow* window) : m_Window(window) {
     IMGUI_CHECKVERSION();
@@ -11,15 +12,26 @@ ImGuiManager::ImGuiManager(GLFWwindow* window) : m_Window(window) {
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
+	// 禁用状态保存，否则下次运行会是上次运行结束时的状态
+    io.IniFilename = nullptr; // 添加此行
+
     SetupStyle();
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 430");
+
+    // 加载默认天空盒
+    std::string defaultPath = std::string("res/skybox/") + m_SkyboxPaths[0];
+    m_CurrentSkyboxTexture = ConvertHDRToCubemap(defaultPath.c_str());
 }
 
 ImGuiManager::~ImGuiManager() {
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
+
+    if (m_CurrentSkyboxTexture != 0) {
+        glDeleteTextures(1, &m_CurrentSkyboxTexture);
+    }
 }
 
 void ImGuiManager::BeginFrame() {
@@ -35,6 +47,8 @@ void ImGuiManager::EndFrame() {
 
 void ImGuiManager::DrawObjectsList(SSBO& ssbo)
 {
+    ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowCollapsed(true, ImGuiCond_FirstUseEver);
     ImGui::Begin("Scene Objects");
 
     static int objType = 0;
@@ -78,7 +92,6 @@ void ImGuiManager::DrawObjectsList(SSBO& ssbo)
             newObj.distance = distance;
         }
         ssbo.objects.push_back(newObj);
-        ssbo.update();
     }
 
     // 显示物体总数
@@ -129,18 +142,21 @@ void ImGuiManager::DrawObjectsList(SSBO& ssbo)
                 ImGui::PopID();
             }
             ssbo.objects.erase(ssbo.objects.begin() + i);
-            ssbo.update();
             i--; // 调整索引，避免跳过元素
             continue;
         }
 
         ImGui::PopID();
     }
+    ssbo.update();
 
     ImGui::End();
 }
 
 void ImGuiManager::DrawCameraControls(Camera& camera) {
+
+    ImGui::SetNextWindowPos(ImVec2(10, 70), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowCollapsed(true, ImGuiCond_FirstUseEver);
     ImGui::Begin("Camera Controls");
 
     // 位置控制
@@ -161,8 +177,10 @@ void ImGuiManager::DrawCameraControls(Camera& camera) {
     ImGui::End();
 }
 
-// ImGuiManager.cpp
 void ImGuiManager::DrawLightController(LightSSBO& lightSSBO) {
+
+    ImGui::SetNextWindowPos(ImVec2(10, 40), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowCollapsed(true, ImGuiCond_FirstUseEver);
     ImGui::Begin("Light Controller");
 
     static int lightType = 0;
@@ -207,7 +225,6 @@ void ImGuiManager::DrawLightController(LightSSBO& lightSSBO) {
         }
 
         lightSSBO.lights.push_back(newLight);
-        lightSSBO.update();
     }
 
     // 光源列表
@@ -236,7 +253,6 @@ void ImGuiManager::DrawLightController(LightSSBO& lightSSBO) {
             // 删除按钮
             if (ImGui::SmallButton("Delete")) {
                 lightSSBO.lights.erase(lightSSBO.lights.begin() + i);
-                lightSSBO.update();
                 ImGui::TreePop();
                 ImGui::PopID();
                 break;
@@ -247,10 +263,10 @@ void ImGuiManager::DrawLightController(LightSSBO& lightSSBO) {
         ImGui::PopID();
     }
 
+    lightSSBO.update();
     ImGui::End();
 }
 
-// ImGuiManager.cpp
 void ImGuiManager::DrawFPS() {
     // 设置窗口属性：无标题栏、透明背景、固定位置
     ImGuiWindowFlags flags =
@@ -291,6 +307,29 @@ void ImGuiManager::DrawFPS() {
         ImGui::SameLine();
         ImGui::TextColored(color, "%.1f", fps);
     }
+    ImGui::End();
+}
+
+void ImGuiManager::ChooseSkybox() {
+
+    ImGui::SetNextWindowPos(ImVec2(10, 100), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowCollapsed(true, ImGuiCond_FirstUseEver);
+    ImGui::Begin("Skybox Settings");
+
+    // 启用/禁用天空盒复选框
+    ImGui::Checkbox("Enable Skybox", &m_UseSkybox);
+
+    // 天空盒选择下拉菜单
+    if (ImGui::Combo("Select Skybox", &m_SelectedSkyboxIndex, m_SkyboxNames.data(), static_cast<int>(m_SkyboxNames.size()))) {
+        // 当选择改变时重新加载天空盒
+        if (m_CurrentSkyboxTexture != 0) {
+            glDeleteTextures(1, &m_CurrentSkyboxTexture);
+            m_CurrentSkyboxTexture = 0;
+        }
+        std::string fullPath = std::string("res/skybox/") + m_SkyboxPaths[m_SelectedSkyboxIndex];
+        m_CurrentSkyboxTexture = ConvertHDRToCubemap(fullPath.c_str());
+    }
+
     ImGui::End();
 }
 

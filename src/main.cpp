@@ -4,9 +4,10 @@
 #include <GLFW/glfw3.h>
 #include "Camera.h"
 #include <imgui.h>
+#include "TextureLoader.h"
 
 const int WIDTH = 800;
-const int HEIGHT = 600;
+const int HEIGHT = 800;
 
 Camera camera;
 bool firstMouse = true;
@@ -90,8 +91,8 @@ int main() {
     glfwSetCursorPosCallback(window, mouse_callback);
     glfwSetScrollCallback(window, scroll_callback);
 
-    Shader raytracingShader("E:/vsProject/opengl_rt/shader/raytracingCs.glsl");
-    Shader outputShader("E:/vsProject/opengl_rt/shader/outputVs.glsl", "E:/vsProject/opengl_rt/shader/outputFs.glsl");
+    Shader raytracingShader("shader/raytracingCs.glsl");
+    Shader outputShader("shader/outputVs.glsl", "shader/outputFs.glsl");
 
     GLuint outputTex;
     glGenTextures(1, &outputTex);
@@ -126,24 +127,33 @@ int main() {
         });
     ssbo.update();
 
-    LightSSBO lightSSBO;
 
+    LightSSBO lightSSBO;
     // 添加默认光源
     Light defaultLight;
     defaultLight.type = LightType::POINT;
     defaultLight.position = glm::vec3(0.0f, 3.0f, 0.0f);
+    defaultLight.direction = glm::vec3(0.f, 0.f, -1.f);
     defaultLight.color = glm::vec3(1.0f);
     defaultLight.intensity = 1.0f;
     defaultLight.radius = 10.0f;
     lightSSBO.lights.push_back(defaultLight);
     lightSSBO.update();
 
+	glm::vec2 resolution = glm::vec2(WIDTH, HEIGHT);
+
     while (!glfwWindowShouldClose(window)) {
 
-        // 计算时间差
         float currentFrame = glfwGetTime();
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
+
+        // 获取实际帧缓冲尺寸（物理像素）
+        int fbWidth, fbHeight;
+        glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
+
+        // 设置视口匹配实际尺寸（有这3行才能放满整个窗口）
+        glViewport(0, 0, fbWidth, fbHeight);
 
         imguiManager.BeginFrame();
 		imguiManager.HandleCameraMovement(camera, deltaTime);
@@ -151,6 +161,7 @@ int main() {
         imguiManager.DrawObjectsList(ssbo);
         imguiManager.DrawLightController(lightSSBO);
         imguiManager.DrawCameraControls(camera);
+        imguiManager.ChooseSkybox();
         
         raytracingShader.use();
         raytracingShader.setInt("numObjects", ssbo.objects.size());
@@ -159,6 +170,13 @@ int main() {
         raytracingShader.setVec3("cameraUp", camera.Up);
         raytracingShader.setVec3("cameraRight", camera.Right);
         raytracingShader.setFloat("fov", camera.FOV);
+
+        // 绑定天空盒
+        if (imguiManager.IsSkyboxEnabled()) {
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_CUBE_MAP, imguiManager.GetCurrentSkyboxTexture());
+        }
+        raytracingShader.setBool("useSkybox", imguiManager.IsSkyboxEnabled());
 
         glDispatchCompute(
             (WIDTH + 15) / 16,  // 向上取整
@@ -170,6 +188,7 @@ int main() {
         glClear(GL_COLOR_BUFFER_BIT);
 
         outputShader.use();
+		outputShader.setVec2("resolution", resolution);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, outputTex);
         glBindVertexArray(VAO);

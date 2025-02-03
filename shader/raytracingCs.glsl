@@ -33,13 +33,16 @@ layout(std430, binding = 1) buffer Lights {
     Light lights[];
 };
 
+uniform int numObjects;
+
 uniform vec3 cameraPos;
 uniform vec3 cameraDir;
 uniform vec3 cameraUp;
 uniform vec3 cameraRight;
 uniform float fov;
-uniform int numObjects;
-uniform vec3 BackGroundColor;
+
+uniform samplerCube skybox;
+uniform bool useSkybox;
 
 vec3 computeLighting(vec3 point, vec3 normal, vec3 albedo) {
     vec3 totalLight = vec3(0.0);
@@ -139,6 +142,11 @@ void main() {
         vec3 lighting = computeLighting(hitPoint, hitNormal, hitColor);
         imageStore(outputImage, pixelCoords, vec4(lighting, 1.0));
     } else {
-        imageStore(outputImage, pixelCoords, vec4(BackGroundColor, 1.0));
+        if (useSkybox) {
+            vec3 skyColor = texture(skybox, ray.direction).rgb;
+            imageStore(outputImage, pixelCoords, vec4(skyColor, 1.0));
+        } else {
+            imageStore(outputImage, pixelCoords, vec4(0.0, 0.0, 0.0, 1.0));
+        }
     }
 }
