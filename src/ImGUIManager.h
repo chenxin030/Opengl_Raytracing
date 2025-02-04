@@ -23,7 +23,8 @@ public:
     void ChooseSkybox();
 
 	void HandleCameraMovement(Camera& camera, float deltaTime);
-
+    
+    std::vector<UIObject> m_UIObjects; // 维护带名称的UI对象列表
 private:
 
     GLFWwindow* m_Window;

@@ -44,112 +44,130 @@ void ImGuiManager::EndFrame() {
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
+// ImGUIManager.cpp
 
-void ImGuiManager::DrawObjectsList(SSBO& ssbo)
-{
-    ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
+void ImGuiManager::DrawObjectsList(SSBO& ssbo) {
+    ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Always);
     ImGui::SetNextWindowCollapsed(true, ImGuiCond_FirstUseEver);
-    ImGui::Begin("Scene Objects");
+    ImGui::Begin("Scene Objects", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings);
 
-    static int objType = 0;
-    static float pos[3] = { 0.0f, 0.0f, -5.0f };
-    static float color[3] = { 1.0f, 1.0f, 1.0f };
-    static float radius = 1.0f;
-    static float normal[3] = { 0.0f, 1.0f, 0.0f };
+    static UIObject uiObj{ "New Object" };
+
+    // 名称输入
+    ImGui::InputText("Name", uiObj.name, IM_ARRAYSIZE(uiObj.name));
 
     // 物体类型选择
+	static int objType = 0;
     ImGui::RadioButton("Sphere", &objType, 0);
     ImGui::SameLine();
     ImGui::RadioButton("Plane", &objType, 1);
 
-    // 通用属性
+    // 基础属性
+    static float pos[3] = { 0.0f,0.0f,-5.0f };
+    static float radius = 1.0f;
+	static float normal[3] = { 0.0f,1.0f,0.0f };
+	static float distance = 0.0f;
     ImGui::InputFloat3("Position", pos);
-    ImGui::ColorEdit3("Color", color);
-
-    // 类型特定属性
     if (objType == 0) {
         ImGui::InputFloat("Radius", &radius);
     }
-
-    static float distance = 0.0f;
     if (objType == 1) {
         ImGui::InputFloat3("Normal", normal);
         ImGui::InputFloat("Distance", &distance);
     }
 
-    // 添加物体按钮
-    if (ImGui::Button("Add Object")) {
-        Object newObj;
-        newObj.type = objType;
-        newObj.position = glm::vec3(pos[0], pos[1], pos[2]);
-        newObj.color = glm::vec3(color[0], color[1], color[2]);
+	uiObj.obj.type = static_cast<ObjectType>(objType);
+	uiObj.obj.position = glm::vec3(pos[0], pos[1], pos[2]);
+    uiObj.obj.radius = radius;
+	uiObj.obj.normal = glm::vec3(normal[0], normal[1], normal[2]);
+    uiObj.obj.distance = distance;
 
-        if (objType == 0) {
-            newObj.radius = radius;
-        }
-        else if (objType == 1) {
-            newObj.normal = glm::normalize(glm::vec3(normal[0], normal[1], normal[2]));
-            newObj.distance = distance;
-        }
-        ssbo.objects.push_back(newObj);
+    // 材质属性面板
+    ImGui::Separator();
+    ImGui::Text("Material Settings");
+
+    // 材质类型选择
+	int type = uiObj.obj.material.type;
+    ImGui::RadioButton("Metallic", &type, MATERIAL_METALLIC);
+    ImGui::SameLine();
+    ImGui::RadioButton("Dielectric", &type, MATERIAL_DIELECTRIC);
+    ImGui::SameLine();
+    ImGui::RadioButton("Plastic", &type, MATERIAL_PLASTIC);
+	uiObj.obj.material.type = static_cast<MaterialType>(type);
+
+    // 通用参数
+    ImGui::ColorEdit3("Albedo", &uiObj.obj.material.albedo.r);
+    ImGui::SliderFloat("Roughness", &uiObj.obj.material.roughness, 0.0f, 1.0f);
+
+    // 类型特定参数
+    switch (uiObj.obj.material.type) {
+    case MATERIAL_METALLIC:
+        ImGui::SliderFloat("Metallic ", &uiObj.obj.material.metallic, 0.0f, 1.0f);
+        uiObj.obj.material.transparency = 0.0f; // 金属不透明
+        break;
+    case MATERIAL_DIELECTRIC:
+        ImGui::SliderFloat("IOR", &uiObj.obj.material.ior, 1.0f, 2.5f);
+        ImGui::SliderFloat("Transparency", &uiObj.obj.material.transparency, 0.0f, 1.0f);
+        uiObj.obj.material.metallic = 0.0f; // 电介质非金属
+        break;
+    case MATERIAL_PLASTIC:
+        ImGui::SliderFloat("Specular", &uiObj.obj.material.specular, 0.0f, 1.0f);
+        uiObj.obj.material.transparency = 0.0f; // 塑料不透明
+        break;
     }
 
-    // 显示物体总数
-    ImGui::Text("Total Objects: %d", ssbo.objects.size());
+    // 添加物体按钮
+    if (ImGui::Button("Add Object")) {
+        Object renderObject;
+		renderObject.type = static_cast<ObjectType>(objType);
+        renderObject.position = glm::vec3(uiObj.obj.position[0], uiObj.obj.position[1], uiObj.obj.position[2]);
+        renderObject.material = uiObj.obj.material;
+        renderObject.radius = uiObj.obj.radius;
+        renderObject.normal = glm::vec3(uiObj.obj.normal[0], uiObj.obj.normal[1], uiObj.obj.normal[2]);
+        renderObject.distance = uiObj.obj.distance;
+        m_UIObjects.push_back({ uiObj });
+        ssbo.objects.push_back(renderObject);
+    }
+
+    // 物体列表编辑
     ImGui::Separator();
+    ImGui::Text("Total Objects: %d", ssbo.objects.size());
 
-    // 遍历所有物体
-    for (int i = 0; i < ssbo.objects.size(); ++i) {
-        Object& obj = ssbo.objects[i];
+    for (int i = 0; i < m_UIObjects.size(); ++i) {
+        UIObject& uiObj = m_UIObjects[i];
+        Object& renderObj = ssbo.objects[i];
 
-        // 生成唯一标识符
         ImGui::PushID(i);
-
-        // 创建可折叠的树节点
         bool nodeOpen = ImGui::TreeNodeEx(
             (void*)(intptr_t)i,
-            ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_Framed,
-            "Object %d: %s", i, (obj.type == 0) ? "Sphere" : "Plane"
+            ImGuiTreeNodeFlags_DefaultOpen,
+            "%s##%d", uiObj.name, i
         );
 
         if (nodeOpen) {
-            // 显示通用属性
-            ImGui::Text("Position");
-            ImGui::InputFloat3("##pos", &obj.position.x);
+            // 编辑名称
+            ImGui::InputText("Name##obj", uiObj.name, IM_ARRAYSIZE(uiObj.name));
 
-            ImGui::Text("Color");
-            ImGui::ColorEdit3("##col", &obj.color.x);
+            // 同步到渲染对象
+            if (ImGui::InputFloat3("Position", &uiObj.obj.position.x)) {
+                renderObj.position = uiObj.obj.position;
+            }
 
-            // 显示类型特定属性
-            if (obj.type == 0) { // 球体
-                ImGui::Text("Radius");
-                ImGui::InputFloat("##radius", &obj.radius);
-            }
-            else { // 平面
-                ImGui::Text("Normal");
-                ImGui::InputFloat3("##normal", &obj.normal.x);
-                ImGui::Text("Distance");
-                ImGui::InputFloat("##distance", &obj.distance);
-            }
+            // 其他属性同步逻辑...
 
             ImGui::TreePop();
         }
 
-        bool deleteClicked = false;
+        // 删除按钮需要同时删除两个列表的元素
         if (ImGui::SmallButton("Delete")) {
-            // 先关闭节点再删除
-            if (nodeOpen) {
-                ImGui::PopID();
-            }
+            m_UIObjects.erase(m_UIObjects.begin() + i);
             ssbo.objects.erase(ssbo.objects.begin() + i);
-            i--; // 调整索引，避免跳过元素
-            continue;
+            i--;
         }
-
         ImGui::PopID();
     }
-    ssbo.update();
 
+    ssbo.update();
     ImGui::End();
 }
 
@@ -161,7 +179,7 @@ void ImGuiManager::DrawCameraControls(Camera& camera) {
 
     // 位置控制
     ImGui::Text("Position");
-    ImGui::SliderFloat3("##pos", &camera.Position.x, -10.0f, 10.0f);
+    ImGui::SliderFloat3("##uiObj.obj.position", &camera.Position.x, -10.0f, 10.0f);
 
     // 方向显示
     ImGui::Text("Direction: (%.2f, %.2f, %.2f)",
@@ -184,7 +202,7 @@ void ImGuiManager::DrawLightController(LightSSBO& lightSSBO) {
     ImGui::Begin("Light Controller");
 
     static int lightType = 0;
-    static float pos[3] = { 0.0f, 3.0f, 0.0f };
+    static float position[3] = { 0.0f, 3.0f, 0.0f };
     static float color[3] = { 1.0f, 1.0f, 1.0f };
     static float intensity = 1.0f;
     static float radius = 5.0f;
@@ -201,7 +219,7 @@ void ImGuiManager::DrawLightController(LightSSBO& lightSSBO) {
     // 类型特定属性
     static float dir[3];
     if (lightType == 0) {
-        ImGui::InputFloat3("Position", pos);
+        ImGui::InputFloat3("Position", position);
         ImGui::SliderFloat("Radius", &radius, 1.0f, 20.0f);
     }
     else {
@@ -217,7 +235,7 @@ void ImGuiManager::DrawLightController(LightSSBO& lightSSBO) {
         newLight.intensity = intensity;
 
         if (lightType == 0) {
-            newLight.position = glm::vec3(pos[0], pos[1], pos[2]);
+            newLight.position = glm::vec3(position[0], position[1], position[2]);
             newLight.radius = radius;
         }
         else {

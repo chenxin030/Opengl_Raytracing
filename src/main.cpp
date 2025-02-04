@@ -117,17 +117,60 @@ int main() {
 
     // 创建场景
     SSBO ssbo;
-    ssbo.objects.push_back({
-        0,
-        glm::vec3(0.0f, 0.0f, -5.0f),
-        glm::vec3(1.0f, 0.0f, 0.0f),
-        1.0f,    // radius
-        glm::vec3(0.0f), // normal (unused)
-        0.0f     // distance (unused)
-        });
-    ssbo.update();
 
+    // 玻璃材质球体（左侧）
+    {
+        Object glassSphere;
+        glassSphere.type = ObjectType::SPHERE; // 球体
+        glassSphere.position = glm::vec3(-2.0f, 0.0f, -5.0f);
+        glassSphere.radius = 1.0f;
 
+        // 玻璃材质参数
+        glassSphere.material.type = MATERIAL_DIELECTRIC;
+        glassSphere.material.albedo = glm::vec3(0.9f, 0.9f, 0.9f); // 轻微色调
+        glassSphere.material.ior = 1.5f;        // 玻璃折射率
+        glassSphere.material.transparency = 0.95f; // 高透明度
+        glassSphere.material.roughness = 0.05f;  // 表面光滑
+
+        ssbo.objects.push_back(glassSphere);
+        imguiManager.m_UIObjects.push_back({ "Glass Sphere", glassSphere });
+    }
+
+    // 金属材质球体（中间）
+    {
+        Object metalSphere;
+        metalSphere.type = ObjectType::SPHERE; // 球体
+        metalSphere.position = glm::vec3(0.0f, 0.0f, -5.0f);
+        metalSphere.radius = 1.0f;
+
+        // 金属材质参数
+        metalSphere.material.type = MATERIAL_METALLIC;
+        metalSphere.material.albedo = glm::vec3(0.8f, 0.8f, 0.8f); // 基础色
+        metalSphere.material.metallic = 1.0f;     // 完全金属
+        metalSphere.material.roughness = 0.1f;    // 轻微粗糙度
+        metalSphere.material.specular = 0.0f;     // 金属不使用该参数
+
+        ssbo.objects.push_back(metalSphere);
+        imguiManager.m_UIObjects.push_back({ "metal Sphere", metalSphere });
+    }
+
+    // 塑料材质球体（右侧）
+    {
+        Object plasticSphere;
+        plasticSphere.type = ObjectType::SPHERE; // 球体
+        plasticSphere.position = glm::vec3(2.0f, 0.0f, -5.0f);
+        plasticSphere.radius = 1.0f;
+
+        // 塑料材质参数
+        plasticSphere.material.type = MATERIAL_PLASTIC;
+        plasticSphere.material.albedo = glm::vec3(0.2f, 0.5f, 0.8f); // 蓝色塑料
+        plasticSphere.material.specular = 0.6f;    // 中等镜面反射
+        plasticSphere.material.roughness = 0.5f;   // 半粗糙表面
+        plasticSphere.material.transparency = 0.0f; // 不透明
+
+        ssbo.objects.push_back(plasticSphere);
+        imguiManager.m_UIObjects.push_back({ "plastic Sphere", plasticSphere });
+    }
     LightSSBO lightSSBO;
     // 添加默认光源
     Light defaultLight;
