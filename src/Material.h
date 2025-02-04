@@ -9,11 +9,12 @@ enum MaterialType {
 };
 
 struct Material {
-    alignas(4) MaterialType type = MATERIAL_PLASTIC;
-    alignas(16) glm::vec3 albedo = glm::vec3(1.0f);       // 基础颜色
-    alignas(4) float metallic = 0.0f;                    // 金属度 [0-1]
-    alignas(4) float roughness = 0.5f;                   // 粗糙度 [0-1]
-    alignas(4) float ior = 1.0f;                         // 折射率
-    alignas(4) float transparency = 0.0f;                // 透明度 [0-1]
-    alignas(4) float specular = 0.5f;                    // 镜面反射强度
+    alignas(4) MaterialType type = MATERIAL_PLASTIC;    // 4字节对齐，占4字节
+    alignas(16) glm::vec3 albedo = glm::vec3(1.0f);     // 16字节对齐，占12字节
+    alignas(4) float metallic = 0.0f;                   // 4字节对齐，占4字节
+    alignas(4) float roughness = 0.5f;                  // 4字节对齐，占4字节
+    alignas(4) float ior = 1.0f;                        // 4字节对齐，占4字节
+    alignas(4) float transparency = 0.0f;               // 4字节对齐，占4字节
+    alignas(4) float specular = 0.5f;                   // 4字节对齐，占4字节
 };
+

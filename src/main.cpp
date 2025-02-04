@@ -171,8 +171,24 @@ int main() {
         ssbo.objects.push_back(plasticSphere);
         imguiManager.m_UIObjects.push_back({ "plastic Sphere", plasticSphere });
     }
-    LightSSBO lightSSBO;
+	// 地板
+	{
+		Object floor;
+		floor.type = ObjectType::PLANE; // 平面
+		floor.position = glm::vec3(0.0f, -1.0f, -5.0f);
+		floor.normal = glm::vec3(0.0f, 1.0f, 0.0f);
+        floor.size = glm::vec2(1.0f, 1.0f);
+
+		floor.material.type = MATERIAL_METALLIC;
+		floor.material.albedo = glm::vec3(0.8f, 0.8f, 0.8f); // 灰色
+		floor.material.specular = 0.0f;    // 无镜面反射
+		floor.material.roughness = 0.0f;   // 完全光滑
+		ssbo.objects.push_back(floor);
+		imguiManager.m_UIObjects.push_back({ "Floor", floor });
+	}
+
     // 添加默认光源
+    LightSSBO lightSSBO;
     Light defaultLight;
     defaultLight.type = LightType::POINT;
     defaultLight.position = glm::vec3(0.0f, 3.0f, 0.0f);
@@ -182,8 +198,6 @@ int main() {
     defaultLight.radius = 10.0f;
     lightSSBO.lights.push_back(defaultLight);
     lightSSBO.update();
-
-	glm::vec2 resolution = glm::vec2(WIDTH, HEIGHT);
 
     while (!glfwWindowShouldClose(window)) {
 
@@ -231,7 +245,6 @@ int main() {
         glClear(GL_COLOR_BUFFER_BIT);
 
         outputShader.use();
-		outputShader.setVec2("resolution", resolution);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, outputTex);
         glBindVertexArray(VAO);

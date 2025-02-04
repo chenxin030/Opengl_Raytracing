@@ -26,7 +26,7 @@ struct Object {
     Material material;
     float radius;   // 球体
     vec3 normal;    // 平面
-    float distance; // 平面
+    vec2 size;      // 平面
 };
 
 struct Light {
@@ -121,6 +121,7 @@ vec3 computeLighting(vec3 point, vec3 normal, Material mat, vec3 viewDir) {
     
     return totalLight;
 }
+
 bool intersectSphere(Ray ray, Object obj, out float t) {
     vec3 oc = ray.origin - obj.position;
     float a = dot(ray.direction, ray.direction);
@@ -139,9 +140,28 @@ bool intersectSphere(Ray ray, Object obj, out float t) {
 bool intersectPlane(Ray ray, Object obj, out float t) {
     float denom = dot(obj.normal, ray.direction);
     if (abs(denom) > 1e-6) {
-        vec3 p0 = obj.normal * obj.distance; // 使用存储的距离值
-        t = dot(p0 - ray.origin, obj.normal) / denom;
-        return t >= 0.0;
+        // 计算交点
+        t = dot(obj.position - ray.origin, obj.normal) / denom;
+        if(t < 0.0) return false;
+        
+        vec3 hitPoint = ray.origin + ray.direction * t;
+        
+        // 构建安全的局部坐标系
+        vec3 refVec = abs(obj.normal.y) > 0.9 ? vec3(0,0,1) : vec3(0,1,0);
+        vec3 right = normalize(cross(obj.normal, refVec));
+        vec3 forward = normalize(cross(right, obj.normal));
+        
+        // 计算局部坐标
+        vec3 localOffset = hitPoint - obj.position;
+        float x = dot(localOffset, right);
+        float y = dot(localOffset, forward);
+        
+        // 检查尺寸范围（使用obj.size的x和y分别对应宽高）
+        if(abs(x) > obj.size.x/2.0 || abs(y) > obj.size.y/2.0) {
+            return false;
+        }
+        
+        return true;
     }
     return false;
 }

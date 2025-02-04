@@ -67,20 +67,21 @@ void ImGuiManager::DrawObjectsList(SSBO& ssbo) {
     static float radius = 1.0f;
 	static float normal[3] = { 0.0f,1.0f,0.0f };
 	static float distance = 0.0f;
+	static float size[2] = { 1.0f, 1.0f };
     ImGui::InputFloat3("Position", pos);
     if (objType == 0) {
         ImGui::InputFloat("Radius", &radius);
     }
-    if (objType == 1) {
+    if (objType == 1) { // 平面
         ImGui::InputFloat3("Normal", normal);
-        ImGui::InputFloat("Distance", &distance);
+        ImGui::InputFloat2("Size (W/H)", size);
     }
 
 	uiObj.obj.type = static_cast<ObjectType>(objType);
 	uiObj.obj.position = glm::vec3(pos[0], pos[1], pos[2]);
     uiObj.obj.radius = radius;
 	uiObj.obj.normal = glm::vec3(normal[0], normal[1], normal[2]);
-    uiObj.obj.distance = distance;
+	uiObj.obj.size = glm::vec2(size[0], size[1]);
 
     // 材质属性面板
     ImGui::Separator();
@@ -116,7 +117,7 @@ void ImGuiManager::DrawObjectsList(SSBO& ssbo) {
         break;
     }
 
-    // 添加物体按钮
+    // 添加物体
     if (ImGui::Button("Add Object")) {
         Object renderObject;
 		renderObject.type = static_cast<ObjectType>(objType);
@@ -124,7 +125,7 @@ void ImGuiManager::DrawObjectsList(SSBO& ssbo) {
         renderObject.material = uiObj.obj.material;
         renderObject.radius = uiObj.obj.radius;
         renderObject.normal = glm::vec3(uiObj.obj.normal[0], uiObj.obj.normal[1], uiObj.obj.normal[2]);
-        renderObject.distance = uiObj.obj.distance;
+        renderObject.size = uiObj.obj.size;
         m_UIObjects.push_back({ uiObj });
         ssbo.objects.push_back(renderObject);
     }
@@ -148,12 +149,74 @@ void ImGuiManager::DrawObjectsList(SSBO& ssbo) {
             // 编辑名称
             ImGui::InputText("Name##obj", uiObj.name, IM_ARRAYSIZE(uiObj.name));
 
-            // 同步到渲染对象
+            // 同步位置
             if (ImGui::InputFloat3("Position", &uiObj.obj.position.x)) {
                 renderObj.position = uiObj.obj.position;
             }
 
-            // 其他属性同步逻辑...
+            // 类型相关属性同步
+            if (uiObj.obj.type == ObjectType::SPHERE) {
+                // 同步球体半径
+                if (ImGui::DragFloat("Radius##obj", &uiObj.obj.radius, 0.1f, 0.0f, 100.0f)) {
+                    renderObj.radius = uiObj.obj.radius;
+                }
+            }
+            else if(uiObj.obj.type == ObjectType::PLANE) {
+                // 同步平面法线和距离
+                if (ImGui::InputFloat3("Normal##obj", &uiObj.obj.normal.x)) {
+                    renderObj.normal = uiObj.obj.normal;
+                }
+				// TODO:把原来的distance改成size
+                if (ImGui::InputFloat2("Size##obj", &uiObj.obj.size.x)) {
+                    renderObj.size = uiObj.obj.size;
+                }
+            }
+
+            // 同步材质属性
+            ImGui::Separator();
+            ImGui::Text("Material Settings");
+
+            // 材质类型
+            int matType = uiObj.obj.material.type;
+            if (ImGui::RadioButton("Metallic##obj", &matType, MATERIAL_METALLIC) ||
+                ImGui::RadioButton("Dielectric##obj", &matType, MATERIAL_DIELECTRIC) ||
+                ImGui::RadioButton("Plastic##obj", &matType, MATERIAL_PLASTIC))
+            {
+                uiObj.obj.material.type = static_cast<MaterialType>(matType);
+                renderObj.material.type = static_cast<MaterialType>(matType);
+            }
+
+            // 基础颜色
+            if (ImGui::ColorEdit3("Albedo##obj", &uiObj.obj.material.albedo.r)) {
+                renderObj.material.albedo = uiObj.obj.material.albedo;
+            }
+
+            // 粗糙度
+            if (ImGui::SliderFloat("Roughness##obj", &uiObj.obj.material.roughness, 0.0f, 1.0f)) {
+                renderObj.material.roughness = uiObj.obj.material.roughness;
+            }
+
+            // 类型特定参数
+            switch (uiObj.obj.material.type) {
+            case MATERIAL_METALLIC:
+                if (ImGui::SliderFloat("Metallic ##obj", &uiObj.obj.material.metallic, 0.0f, 1.0f)) {
+                    renderObj.material.metallic = uiObj.obj.material.metallic;
+                }
+                break;
+            case MATERIAL_DIELECTRIC:
+                if (ImGui::SliderFloat("IOR##obj", &uiObj.obj.material.ior, 1.0f, 2.5f)) {
+                    renderObj.material.ior = uiObj.obj.material.ior;
+                }
+                if (ImGui::SliderFloat("Transparency##obj", &uiObj.obj.material.transparency, 0.0f, 1.0f)) {
+                    renderObj.material.transparency = uiObj.obj.material.transparency;
+                }
+                break;
+            case MATERIAL_PLASTIC:
+                if (ImGui::SliderFloat("Specular##obj", &uiObj.obj.material.specular, 0.0f, 1.0f)) {
+                    renderObj.material.specular = uiObj.obj.material.specular;
+                }
+                break;
+            }
 
             ImGui::TreePop();
         }
