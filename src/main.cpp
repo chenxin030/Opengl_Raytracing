@@ -190,13 +190,23 @@ int main() {
     // 添加默认光源
     LightSSBO lightSSBO;
     Light defaultLight;
-    defaultLight.type = LightType::POINT;
+    defaultLight.type = LightType::DIRECTIONAL;
     defaultLight.position = glm::vec3(0.0f, 3.0f, 0.0f);
-    defaultLight.direction = glm::vec3(0.f, 0.f, -1.f);
+    defaultLight.direction = glm::vec3(1.0f, -1.0f, -1.f);
     defaultLight.color = glm::vec3(1.0f);
     defaultLight.intensity = 1.0f;
-    defaultLight.radius = 10.0f;
+    defaultLight.radius = 0.0f;
     lightSSBO.lights.push_back(defaultLight);
+
+    Light areaLight;
+    areaLight.type = LightType::AREA;
+    areaLight.position = glm::vec3(0, 3, 0);
+    areaLight.direction = glm::vec3(0, -1, 0); // 光源朝向
+    areaLight.color = glm::vec3(1.0);
+    areaLight.intensity = 5.0;
+    areaLight.radius = 0.5f;    // 控制阴影柔和度
+    areaLight.samples = 8;     // 控制噪点程度
+    lightSSBO.lights.push_back(areaLight);
     lightSSBO.update();
 
     while (!glfwWindowShouldClose(window)) {

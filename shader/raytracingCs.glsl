@@ -2,6 +2,7 @@
 
 // 新增最大递归深度限制
 #define MAX_RAY_DEPTH 3 
+const float PI = 3.14159265359;
 
 struct Ray {
     vec3 origin;
@@ -30,12 +31,13 @@ struct Object {
 };
 
 struct Light {
-    int type;            // 0=点光源, 1=定向光
+    int type;            // 0=点光源, 1=定向光, 2=区域光
     vec3 position;      
     vec3 direction;     
     vec3 color;       
-    float intensity;    // 光线能量（用于衰减）
-    int depth;       // 递归深度
+    float intensity;    
+    float radius;       // 区域光源半径
+    int samples;        // 采样数（建议4-16）
 };
 
 layout(local_size_x = 16, local_size_y = 16) in;
@@ -58,69 +60,8 @@ uniform float fov;
 
 uniform samplerCube skybox;
 uniform bool useSkybox;
-// raytracingCs.glsl
 
-vec3 computeLighting(vec3 point, vec3 normal, Material mat, vec3 viewDir) {
-    vec3 totalLight = vec3(0.0);
-    
-    for(int i = 0; i < lights.length(); i++) {
-        Light light = lights[i];
-        vec3 lightDir;
-        float attenuation = 1.0;
-        
-        // 计算光照方向和衰减
-        if(light.type == 0) { // 点光源
-            lightDir = light.position - point;
-            float distance = length(lightDir);
-            attenuation = 1.0 / (1.0 + 0.1 * distance + 0.01 * distance * distance);
-            lightDir = normalize(lightDir);
-        } else { // 定向光
-            lightDir = normalize(-light.direction);
-        }
-        
-        // 漫反射项
-        float NdotL = max(dot(normal, lightDir), 0.0);
-        vec3 diffuse = mat.albedo * light.color * NdotL;
-        
-        // 镜面反射项（根据材质类型）
-        vec3 specular = vec3(0.0);
-        if(mat.type == 0) {
-            // GGX高光模型（简化版）
-            vec3 H = normalize(lightDir + viewDir);
-            float NdotH = max(dot(normal, H), 0.0);
-            float alpha = mat.roughness * mat.roughness;
-            float alpha2 = alpha * alpha;
-            float denom = (NdotH * NdotH) * (alpha2 - 1.0) + 1.0;
-            float D = alpha2 / (3.14159265 * denom * denom);
-            specular = D * mat.metallic * light.color;
-        } 
-        else if(mat.type == 1) {
-            // 菲涅尔反射（Schlick近似）
-            float cosTheta = dot(normal, -viewDir);
-            float F0 = pow((1.0 - mat.ior) / (1.0 + mat.ior), 2.0);
-            float F = F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
-            
-            // 折射计算（仅当透明度>0）
-            if(mat.transparency > 0.01) {
-                vec3 refractDir = refract(-viewDir, normal, 1.0/mat.ior);
-                // ...执行折射光线追踪...
-            }
-            specular = vec3(F) * light.color;
-        }
-        else { // MATERIAL_PLASTIC
-            // Blinn-Phong高光
-            vec3 H = normalize(lightDir + viewDir);
-            float NdotH = max(dot(normal, H), 0.0);
-            specular = light.color * pow(NdotH, 32.0) * mat.specular;
-        }
-        
-        // 能量守恒：漫反射与镜面反射的权重分配
-        float kD = (1.0 - mat.metallic) * (1.0 - mat.transparency);
-        totalLight += (kD * diffuse + specular) * attenuation * light.intensity;
-    }
-    
-    return totalLight;
-}
+uniform float maxRayDistance = 100.0; // 最大射线距离限制
 
 bool intersectSphere(Ray ray, Object obj, out float t) {
     vec3 oc = ray.origin - obj.position;
@@ -167,7 +108,7 @@ bool intersectPlane(Ray ray, Object obj, out float t) {
 }
 
 bool intersectObjects(Ray ray, out Material hitMaterial, out vec3 hitNormal, out float t) {
-    float minT = 1e6;
+    float minT = maxRayDistance;
     bool hit = false;
     
     for(int i = 0; i < numObjects; i++) {
@@ -184,7 +125,7 @@ bool intersectObjects(Ray ray, out Material hitMaterial, out vec3 hitNormal, out
             isHit = intersectPlane(ray, obj, currentT);
         }
         
-        if(isHit && currentT < minT) {
+        if(isHit && currentT > 0.0 && currentT < minT) {
             minT = currentT;
             hit = true;
             t = currentT;
@@ -200,10 +141,181 @@ bool intersectObjects(Ray ray, out Material hitMaterial, out vec3 hitNormal, out
             }
         }
     }
+    t = minT;
     return hit;
 }
 
-// 新增菲涅尔反射率计算
+// 随机数生成器（用于采样分布）
+float random(vec2 st) {
+    return fract(sin(dot(st.xy, vec2(12.9898,78.233)))*43758.5453123);
+}
+
+// 修改区域光源采样函数
+vec3 sampleAreaLight(Light light, vec3 point, vec2 rand, out float pdf) {
+    // 极坐标采样（余弦加权）
+    float theta = 2.0 * PI * rand.x;
+    float r = sqrt(rand.y);
+    vec2 disk = r * vec2(cos(theta), sin(theta));
+    
+    // 构建光源坐标系
+    vec3 normal = normalize(light.direction);
+    vec3 tangent = normalize(cross(normal, vec3(0,1,0)));
+    if(length(tangent) < 0.1) tangent = cross(normal, vec3(1,0,0));
+    vec3 bitangent = cross(normal, tangent);
+    
+    // 生成采样点
+    vec3 samplePos = light.position + 
+                    light.radius * (disk.x * tangent + disk.y * bitangent);
+    
+    // 计算概率密度函数(PDF)
+    pdf = 1.0 / (PI * light.radius * light.radius);
+    return samplePos;
+}
+
+float calculateShadow(vec3 point, vec3 normal, Light light) {
+    float shadow = 0.0;
+    int validSamples = 0;
+    
+    if(light.type == 0) { // 点光源
+        vec3 lightDir = light.position - point;
+        float lightDistance = length(lightDir);
+        lightDir = normalize(lightDir);
+        
+        Ray shadowRay;
+        shadowRay.origin = point + normal * 0.001;
+        shadowRay.direction = lightDir;
+        shadowRay.depth = 0;
+        
+        Material tempMat;
+        vec3 tempNormal;
+        float t;
+        if(intersectObjects(shadowRay, tempMat, tempNormal, t) && t < lightDistance) {
+            return 0.0; // 完全阴影
+        }
+        return 1.0;
+    }
+    else if(light.type == 1) { // 定向光
+        vec3 lightDir = normalize(-light.direction);
+        
+        Ray shadowRay;
+        shadowRay.origin = point + normal * 0.001;
+        shadowRay.direction = lightDir;
+        shadowRay.depth = 0;
+        
+        Material tempMat;
+        vec3 tempNormal;
+        float t;
+        if(intersectObjects(shadowRay, tempMat, tempNormal, t)) {
+            return 0.0; // 完全阴影
+        }
+        return 1.0;
+    }
+    else if(light.type == 2) { // 区域光（重要性采样）
+        float totalWeight = 0.0;
+        float shadow = 0.0;
+        
+        for(int i = 0; i < light.samples; i++) {
+            vec2 rand = vec2(random(point.xy + i), random(point.yz + i));
+            float pdf;
+            vec3 samplePos = sampleAreaLight(light, point, rand, pdf);
+            
+            vec3 lightDir = samplePos - point;
+            float lightDistance = length(lightDir);
+            lightDir = normalize(lightDir);
+            
+            // 计算可见性
+            Ray shadowRay;
+            shadowRay.origin = point + normal * 0.001;
+            shadowRay.direction = lightDir;
+            shadowRay.depth = 0;
+            
+            Material tempMat;
+            vec3 tempNormal;
+            float t;
+            if(!intersectObjects(shadowRay, tempMat, tempNormal, t) || t > lightDistance) {
+                // 计算重要性权重
+                float cosTheta = max(dot(lightDir, normalize(light.direction)), 0.0);
+                float weight = cosTheta / (pdf * light.samples);
+                shadow += weight;
+            }
+            totalWeight += 1.0 / (pdf * light.samples);
+        }
+        
+        // 归一化处理
+        return shadow / totalWeight;
+    }
+    return 1.0;
+}
+
+vec3 computeLighting(vec3 point, vec3 normal, Material mat, vec3 viewDir) {
+    vec3 totalLight = vec3(0.0);
+    
+    for(int i = 0; i < lights.length(); i++) {
+        Light light = lights[i];
+        vec3 lightDir;
+        float attenuation = 1.0;
+        float lightDistance = 0.0;
+        
+        // 计算基础光照参数
+        if(light.type == 0) { // 点光源
+            lightDir = light.position - point;
+            lightDistance = length(lightDir);
+            attenuation = 1.0 / (1.0 + 0.1 * lightDistance + 0.01 * lightDistance * lightDistance);
+            lightDir = normalize(lightDir);
+        }
+        else if(light.type == 1) { // 定向光
+            lightDir = normalize(-light.direction);
+            lightDistance = 1e6; // 无限远
+        }
+        else if(light.type == 2) { // 区域光
+            // 使用基于物理的衰减
+            float distance = length(light.position - point);
+            attenuation = 1.0 / (distance * distance);
+        
+            // 计算光源法线方向贡献
+            vec3 lightNormal = normalize(light.direction);
+            float lightCos = max(dot(-lightDir, lightNormal), 0.0);
+            attenuation *= lightCos;
+        }
+        
+        // 计算阴影因子
+        float shadowFactor = calculateShadow(point, normal, light);
+        
+        // 漫反射项
+        float NdotL = max(dot(normal, lightDir), 0.0);
+        vec3 diffuse = mat.albedo * light.color * NdotL;
+        
+        // 镜面反射项
+        vec3 specular = vec3(0.0);
+        vec3 H = normalize(lightDir + viewDir);
+        float NdotH = max(dot(normal, H), 0.0);
+        
+        if(mat.type == 0) { // 金属
+            float alpha = mat.roughness * mat.roughness;
+            float alpha2 = alpha * alpha;
+            float denom = NdotH * NdotH * (alpha2 - 1.0) + 1.0;
+            float D = alpha2 / (3.14159265 * denom * denom);
+            specular = D * mat.metallic * light.color;
+        }
+        else if(mat.type == 1) { // 电介质
+            float F0 = pow((1.0 - mat.ior) / (1.0 + mat.ior), 2.0);
+            float F = F0 + (1.0 - F0) * pow(1.0 - max(dot(viewDir, normal), 0.0), 5.0);
+            specular = vec3(F) * light.color;
+        }
+        else if(mat.type == 2) { // 塑料
+            specular = light.color * pow(NdotH, 32.0) * mat.specular;
+        }
+        
+        // 能量守恒
+        float kD = (1.0 - mat.metallic) * (1.0 - mat.transparency);
+        vec3 contribution = (kD * diffuse + specular) * attenuation * light.intensity;
+        
+        totalLight += contribution * shadowFactor;
+    }
+    
+    return totalLight;
+}
+
 float fresnelSchlick(float cosTheta, float ior) {
     float r0 = pow((1.0 - ior) / (1.0 + ior), 2.0);
     return r0 + (1.0 - r0) * pow(1.0 - cosTheta, 5.0);
