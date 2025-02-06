@@ -7,8 +7,6 @@
 #include "TextureLoader.h"
 #include "SceneIO.h"
 
-#include "nfd.h"
-
 ImGuiManager::ImGuiManager(GLFWwindow* window) : m_Window(window) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
