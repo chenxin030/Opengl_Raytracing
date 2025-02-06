@@ -21,12 +21,12 @@ public:
     void DrawCameraControls(Camera& camera);
     void DrawLightController(LightSSBO& lightSSBO);
     void DrawFPS();
-	void DrawSceneIO(SSBO& ssbo, LightSSBO& lightSSBO);
 
+	// Load / Save Scene
+    void DrawSceneIO(SSBO& ssbo, LightSSBO& lightSSBO);
     GLuint GetCurrentSkyboxTexture() const { return m_CurrentSkyboxTexture; }
     bool IsSkyboxEnabled() const { return m_UseSkybox; }
     void ChooseSkybox();
-
     struct FileDialog {
         bool show = false;
         bool isOpenMode = true;
@@ -34,13 +34,12 @@ public:
         std::string selectedFile;
         std::vector<std::filesystem::directory_entry> entries;
     } m_FileDialog;
-
     void DrawFileDialog(SSBO& ssbo, LightSSBO& lightSSBO);
     void RefreshFileList();
 
 	void HandleCameraMovement(Camera& camera, float deltaTime);
     
-    std::vector<UIObject> m_UIObjects; // 维护带名称的UI对象列表
+    std::vector<UIObject> m_UIObjects;
 private:
 
     GLFWwindow* m_Window;

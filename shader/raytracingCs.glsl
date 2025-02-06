@@ -51,6 +51,7 @@ layout(std430, binding = 1) buffer Lights {
 };
 
 uniform int numObjects;
+uniform int numLights;
 
 uniform vec3 cameraPos;
 uniform vec3 cameraDir;
@@ -88,9 +89,9 @@ bool intersectPlane(Ray ray, Object obj, out float t) {
         vec3 hitPoint = ray.origin + ray.direction * t;
         
         // 构建安全的局部坐标系
-        vec3 refVec = abs(obj.normal.y) > 0.9 ? vec3(0,0,1) : vec3(0,1,0);
-        vec3 right = normalize(cross(obj.normal, refVec));
-        vec3 forward = normalize(cross(right, obj.normal));
+        vec3 forward = normalize(cross(obj.normal, vec3(0,0,1)));
+        if(length(forward) < 0.1) forward = normalize(cross(obj.normal, vec3(0,1,0)));
+        vec3 right = normalize(cross(forward, obj.normal));
         
         // 计算局部坐标
         vec3 localOffset = hitPoint - obj.position;
@@ -168,7 +169,9 @@ vec3 sampleAreaLight(Light light, vec3 point, vec2 rand, out float pdf) {
                     light.radius * (disk.x * tangent + disk.y * bitangent);
     
     // 计算概率密度函数(PDF)
-    pdf = 1.0 / (PI * light.radius * light.radius);
+    // 修复后（正确面积计算）
+    float area = PI * light.radius * light.radius;
+    pdf = 1.0 / (area * light.samples);
     return samplePos;
 }
 
@@ -190,7 +193,7 @@ float calculateShadow(vec3 point, vec3 normal, Light light) {
         vec3 tempNormal;
         float t;
         if(intersectObjects(shadowRay, tempMat, tempNormal, t) && t < lightDistance) {
-            return 0.0; // 完全阴影
+            return 0.5; // 完全阴影
         }
         return 1.0;
     }
@@ -206,7 +209,7 @@ float calculateShadow(vec3 point, vec3 normal, Light light) {
         vec3 tempNormal;
         float t;
         if(intersectObjects(shadowRay, tempMat, tempNormal, t)) {
-            return 0.0; // 完全阴影
+            return 0.5; // 完全阴影
         }
         return 1.0;
     }
@@ -241,18 +244,25 @@ float calculateShadow(vec3 point, vec3 normal, Light light) {
             totalWeight += 1.0 / (pdf * light.samples);
         }
         
-        // 归一化处理
-        return shadow / totalWeight;
+        // 修复后（正确蒙特卡洛积分）
+        return shadow / float(light.samples);
     }
     return 1.0;
+}
+
+// Schlick近似法
+float fresnelSchlick(float cosTheta, float ior) {
+    float r0 = pow((1.0 - ior) / (1.0 + ior), 2.0);
+    return r0 + (1.0 - r0) * pow(1.0 - cosTheta, 5.0); // = R：反射的占比
 }
 
 vec3 computeLighting(vec3 point, vec3 normal, Material mat, vec3 viewDir) {
     vec3 totalLight = vec3(0.0);
     
-    for(int i = 0; i < lights.length(); i++) {
+    for(int i = 0; i < numLights; i++) {
         Light light = lights[i];
         vec3 lightDir;
+        // 衰减
         float attenuation = 1.0;
         float lightDistance = 0.0;
         
@@ -295,7 +305,10 @@ vec3 computeLighting(vec3 point, vec3 normal, Material mat, vec3 viewDir) {
             float alpha2 = alpha * alpha;
             float denom = NdotH * NdotH * (alpha2 - 1.0) + 1.0;
             float D = alpha2 / (3.14159265 * denom * denom);
-            specular = D * mat.metallic * light.color;
+            // 修复后（加入菲涅尔项F和几何项G）
+            float F = fresnelSchlick(max(dot(H, viewDir), 0.0), mat.ior);
+            float G = 1.0 / (1.0 + (mat.roughness + sqrt(mat.roughness)) * NdotL);
+            specular = (D * F * G) * mat.metallic * light.color;
         }
         else if(mat.type == 1) { // 电介质
             float F0 = pow((1.0 - mat.ior) / (1.0 + mat.ior), 2.0);
@@ -314,11 +327,6 @@ vec3 computeLighting(vec3 point, vec3 normal, Material mat, vec3 viewDir) {
     }
     
     return totalLight;
-}
-
-float fresnelSchlick(float cosTheta, float ior) {
-    float r0 = pow((1.0 - ior) / (1.0 + ior), 2.0);
-    return r0 + (1.0 - r0) * pow(1.0 - cosTheta, 5.0);
 }
 
 void main() {
@@ -352,7 +360,7 @@ void main() {
             vec3 viewDir = -ray.direction;
             
             // 菲涅尔反射率计算
-            float cosTheta = dot(-viewDir, hitNormal);
+            float cosTheta = dot(ray.direction, hitNormal);
             float fresnel = fresnelSchlick(cosTheta, hitMaterial.ior);
             
             // 表面颜色计算（包含光照）
@@ -368,12 +376,9 @@ void main() {
             
             // 准备下一次光线追踪
             if(hitMaterial.transparency > 0.01) {
-                // 折射路径
-                vec3 refractDir = refract(
-                    viewDir, 
-                    hitNormal, 
-                    hitMaterial.ior
-                );
+                // 修复后（判断光线进出材质）
+                float eta = (cosTheta > 0.0) ? 1.0/hitMaterial.ior : hitMaterial.ior;
+                vec3 refractDir = refract(viewDir, sign(cosTheta)*hitNormal, eta);
                 
                 Ray refractRay = Ray(
                     hitPoint - 0.001 * hitNormal,

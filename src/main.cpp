@@ -142,6 +142,7 @@ int main() {
         
         raytracingShader.use();
         raytracingShader.setInt("numObjects", ssbo.objects.size());
+        raytracingShader.setInt("numLights", lightSSBO.lights.size());
         raytracingShader.setVec3("cameraPos", camera.Position);
         raytracingShader.setVec3("cameraDir", camera.Front);
         raytracingShader.setVec3("cameraUp", camera.Up);

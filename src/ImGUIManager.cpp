@@ -14,7 +14,7 @@ ImGuiManager::ImGuiManager(GLFWwindow* window) : m_Window(window) {
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
 	// 禁用状态保存，否则下次运行会是上次运行结束时的状态
-    io.IniFilename = nullptr; // 添加此行
+    io.IniFilename = nullptr;
 
     SetupStyle();
     ImGui_ImplGlfw_InitForOpenGL(window, true);
@@ -45,7 +45,6 @@ void ImGuiManager::EndFrame() {
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
-// ImGUIManager.cpp
 
 void ImGuiManager::DrawObjectsList(SSBO& ssbo) {
     ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Always);
@@ -73,7 +72,7 @@ void ImGuiManager::DrawObjectsList(SSBO& ssbo) {
     if (objType == 0) {
         ImGui::InputFloat("Radius", &radius);
     }
-    if (objType == 1) { // 平面
+    if (objType == 1) {
         ImGui::InputFloat3("Normal", normal);
         ImGui::InputFloat2("Size (W/H)", size);
     }
@@ -167,7 +166,6 @@ void ImGuiManager::DrawObjectsList(SSBO& ssbo) {
                 if (ImGui::InputFloat3("Normal##obj", &uiObj.obj.normal.x)) {
                     renderObj.normal = uiObj.obj.normal;
                 }
-				// TODO:把原来的distance改成size
                 if (ImGui::InputFloat2("Size##obj", &uiObj.obj.size.x)) {
                     renderObj.size = uiObj.obj.size;
                 }
@@ -202,6 +200,7 @@ void ImGuiManager::DrawObjectsList(SSBO& ssbo) {
             case MATERIAL_METALLIC:
                 if (ImGui::SliderFloat("Metallic ##obj", &uiObj.obj.material.metallic, 0.0f, 1.0f)) {
                     renderObj.material.metallic = uiObj.obj.material.metallic;
+					renderObj.material.transparency = 0.0f; // 金属不透明
                 }
                 break;
             case MATERIAL_DIELECTRIC:
@@ -210,11 +209,13 @@ void ImGuiManager::DrawObjectsList(SSBO& ssbo) {
                 }
                 if (ImGui::SliderFloat("Transparency##obj", &uiObj.obj.material.transparency, 0.0f, 1.0f)) {
                     renderObj.material.transparency = uiObj.obj.material.transparency;
+					renderObj.material.metallic = 0.0f; // 电介质非金属
                 }
                 break;
             case MATERIAL_PLASTIC:
                 if (ImGui::SliderFloat("Specular##obj", &uiObj.obj.material.specular, 0.0f, 1.0f)) {
                     renderObj.material.specular = uiObj.obj.material.specular;
+					renderObj.material.transparency = 0.0f; // 塑料不透明
                 }
                 break;
             }
@@ -275,6 +276,8 @@ void ImGuiManager::DrawLightController(LightSSBO& lightSSBO) {
     ImGui::RadioButton("Point", &lightType, 0);
     ImGui::SameLine();
     ImGui::RadioButton("Directional", &lightType, 1);
+    ImGui::SameLine();
+    ImGui::RadioButton("Area", &lightType, 2);
 
     // 通用属性
     ImGui::ColorEdit3("Color", color);
@@ -282,19 +285,25 @@ void ImGuiManager::DrawLightController(LightSSBO& lightSSBO) {
 
     // 类型特定属性
     static float dir[3];
+    static int samples;
     if (lightType == 0) {
         ImGui::InputFloat3("Position", position);
         ImGui::SliderFloat("Radius", &radius, 1.0f, 20.0f);
     }
-    else {
-        dir[0] = 0.0f; dir[1] = -1.0f; dir[2] = 0.0f;
+    else if(lightType == 1){
         ImGui::InputFloat3("Direction", dir);
+    }
+    else if (lightType == 2) {
+        ImGui::InputFloat3("Position", position);
+        ImGui::SliderFloat("Radius", &radius, 1.0f, 20.0f);
+		ImGui::InputFloat3("Direction", dir);
+		ImGui::InputInt("Samples", &samples);
     }
 
     // 添加光源按钮
     if (ImGui::Button("Add Light")) {
         Light newLight;
-        newLight.type = (lightType == 0) ? LightType::POINT : LightType::DIRECTIONAL;
+		newLight.type = static_cast<LightType>(lightType);
         newLight.color = glm::vec3(color[0], color[1], color[2]);
         newLight.intensity = intensity;
 
@@ -302,8 +311,14 @@ void ImGuiManager::DrawLightController(LightSSBO& lightSSBO) {
             newLight.position = glm::vec3(position[0], position[1], position[2]);
             newLight.radius = radius;
         }
-        else {
+        else if (lightType == 1){
             newLight.direction = glm::vec3(dir[0], dir[1], dir[2]);
+        }
+        else if (lightType == 2) {
+            newLight.position = glm::vec3(position[0], position[1], position[2]);
+            newLight.radius = radius;
+			newLight.direction = glm::vec3(dir[0], dir[1], dir[2]);
+			newLight.samples = samples;
         }
 
         lightSSBO.lights.push_back(newLight);
@@ -318,7 +333,7 @@ void ImGuiManager::DrawLightController(LightSSBO& lightSSBO) {
         Light& light = lightSSBO.lights[i];
 
         if (ImGui::TreeNodeEx((void*)(intptr_t)i, ImGuiTreeNodeFlags_DefaultOpen,
-            "Light %d: %s", i, (light.type == LightType::POINT) ? "Point" : "Directional"))
+			"Light %d: %s", i, LightTypeToString(light.type)))
         {
             // 编辑属性
             ImGui::ColorEdit3("Color", &light.color.r);
@@ -328,9 +343,15 @@ void ImGuiManager::DrawLightController(LightSSBO& lightSSBO) {
                 ImGui::InputFloat3("Position", &light.position.x);
                 ImGui::SliderFloat("Radius", &light.radius, 1.0f, 20.0f);
             }
-            else {
+            else if(light.type == LightType::DIRECTIONAL) {
                 ImGui::InputFloat3("Direction", &light.direction.x);
             }
+			else if (light.type == LightType::AREA) {
+                ImGui::InputFloat3("Position", &light.position.x);
+                ImGui::SliderFloat("Radius", &light.radius, 1.0f, 20.0f);
+				ImGui::InputFloat3("Direction", &light.direction.x);
+				ImGui::InputInt("Samples", &light.samples);
+			}
 
             // 删除按钮
             if (ImGui::SmallButton("Delete")) {
