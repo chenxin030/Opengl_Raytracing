@@ -1,6 +1,9 @@
 
 #pragma once
 #include <GLFW/glfw3.h>
+#include <filesystem>
+#include <vector>
+
 #include "Camera.h"
 #include "LightSSBO.h"
 
@@ -18,9 +21,22 @@ public:
     void DrawCameraControls(Camera& camera);
     void DrawLightController(LightSSBO& lightSSBO);
     void DrawFPS();
+	void DrawSceneIO(SSBO& ssbo, LightSSBO& lightSSBO);
+
     GLuint GetCurrentSkyboxTexture() const { return m_CurrentSkyboxTexture; }
     bool IsSkyboxEnabled() const { return m_UseSkybox; }
     void ChooseSkybox();
+
+    struct FileDialog {
+        bool show = false;
+        bool isOpenMode = true;
+        std::string currentPath;
+        std::string selectedFile;
+        std::vector<std::filesystem::directory_entry> entries;
+    } m_FileDialog;
+
+    void DrawFileDialog(SSBO& ssbo, LightSSBO& lightSSBO);
+    void RefreshFileList();
 
 	void HandleCameraMovement(Camera& camera, float deltaTime);
     

@@ -5,6 +5,9 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 #include "TextureLoader.h"
+#include "SceneIO.h"
+
+#include "nfd.h"
 
 ImGuiManager::ImGuiManager(GLFWwindow* window) : m_Window(window) {
     IMGUI_CHECKVERSION();
@@ -391,6 +394,32 @@ void ImGuiManager::DrawFPS() {
     ImGui::End();
 }
 
+void ImGuiManager::DrawSceneIO(SSBO& ssbo, LightSSBO& lightSSBO) {
+    ImGui::Begin("Scene IO");
+
+    if (ImGui::Button("Load Scene")) {
+        m_FileDialog.show = true;
+        m_FileDialog.isOpenMode = true;
+        m_FileDialog.currentPath = std::filesystem::current_path().string();
+        RefreshFileList();
+    }
+
+    ImGui::SameLine();
+
+    if (ImGui::Button("Save Scene")) {
+        m_FileDialog.show = true;
+        m_FileDialog.isOpenMode = false;
+        m_FileDialog.currentPath = std::filesystem::current_path().string();
+        RefreshFileList();
+    }
+
+    if (m_FileDialog.show) {
+        DrawFileDialog(ssbo, lightSSBO);
+    }
+
+    ImGui::End();
+}
+
 void ImGuiManager::ChooseSkybox() {
 
     ImGui::SetNextWindowPos(ImVec2(10, 100), ImGuiCond_FirstUseEver);
@@ -412,6 +441,153 @@ void ImGuiManager::ChooseSkybox() {
     }
 
     ImGui::End();
+}
+
+void ImGuiManager::DrawFileDialog(SSBO& ssbo, LightSSBO& lightSSBO) {
+    ImGui::SetNextWindowSize(ImVec2(500, 400), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin(m_FileDialog.isOpenMode ? "Load Scene##FileDialog" : "Save Scene##FileDialog", &m_FileDialog.show)) {
+        // 当前路径显示
+        ImGui::Text("Current Path: %s", m_FileDialog.currentPath.c_str());
+        if (ImGui::Button("↑ Up")) {
+            auto parent_path = std::filesystem::path(m_FileDialog.currentPath).parent_path();
+            if (!parent_path.empty()) {
+                m_FileDialog.currentPath = parent_path.string();
+                RefreshFileList();
+            }
+        }
+
+        // 文件列表
+        if (ImGui::BeginChild("FileList##Unique", ImVec2(0, 300), true)) {
+            for (size_t i = 0; i < m_FileDialog.entries.size(); ++i) {
+                const auto& entry = m_FileDialog.entries[i];
+                ImGui::PushID(static_cast<int>(i)); // 每个条目唯一ID
+
+                const bool isDirectory = entry.is_directory();
+                const std::string displayName = entry.path().filename().string();
+                const bool isParentDir = (i == 0 && displayName == "..");
+
+                // 显示可点击的目录/文件项
+                ImGuiSelectableFlags flags = ImGuiSelectableFlags_AllowDoubleClick;
+                if (ImGui::Selectable(
+                    isDirectory ? "[D] " : "[F] ",
+                    m_FileDialog.selectedFile == entry.path().string(),
+                    flags))
+                {
+                    if (isDirectory) {
+                        if (isParentDir) return; // 父目录需要双击
+                        m_FileDialog.selectedFile = ""; // 单击目录不清空路径
+                    }
+                    else {
+                        m_FileDialog.selectedFile = entry.path().string();
+                    }
+                }
+
+                // 处理双击事件
+                if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+                    if (isDirectory) {
+                        if (isParentDir) {
+                            m_FileDialog.currentPath = entry.path().string();
+                        }
+                        else {
+                            m_FileDialog.currentPath = entry.path().string();
+                        }
+                        RefreshFileList();
+                        m_FileDialog.selectedFile = "";
+                    }
+                }
+
+                // 显示文件名
+                ImGui::SameLine();
+                ImGui::Text("%s", displayName.c_str());
+
+                ImGui::PopID();
+            }
+        }
+        ImGui::EndChild();
+
+        // 文件名输入（保存模式）
+        static char fileName[256] = "untitled";
+        if (!m_FileDialog.isOpenMode) {
+            ImGui::InputText("File Name##Save", fileName, sizeof(fileName));
+            std::filesystem::path fullPath = std::filesystem::path(m_FileDialog.currentPath) / fileName;
+            if (fullPath.extension() != ".scene") {
+                fullPath.replace_extension(".scene");
+            }
+            m_FileDialog.selectedFile = fullPath.string();
+        }
+
+        // 显示当前选择
+        ImGui::TextColored(ImVec4(1, 1, 0, 1), "Selected: %s",
+            m_FileDialog.selectedFile.empty() ? "None" : m_FileDialog.selectedFile.c_str());
+
+        // 操作按钮
+        ImGui::BeginDisabled(m_FileDialog.isOpenMode && m_FileDialog.selectedFile.empty());
+        if (ImGui::Button(m_FileDialog.isOpenMode ? "Open##FDConfirm" : "Save##FDConfirm")) {
+            if (m_FileDialog.isOpenMode) {
+                // 加载场景
+                if (std::filesystem::exists(m_FileDialog.selectedFile)) {
+                    ssbo.objects.clear();
+                    lightSSBO.lights.clear();
+                    m_UIObjects.clear();
+
+                    if (SceneIO::Load(m_FileDialog.selectedFile, ssbo, lightSSBO)) {
+                        // 同步UI对象
+                        for (const auto& obj : ssbo.objects) {
+                            UIObject uiObj;
+                            uiObj.obj = obj;
+                            snprintf(uiObj.name, sizeof(uiObj.name), "%s##%p",
+                                MaterialTypeToString(obj.material.type).c_str(),
+                                (void*)&obj);
+                            m_UIObjects.push_back(uiObj);
+                        }
+                        ssbo.update();
+                        lightSSBO.update();
+                    }
+                }
+            }
+            else {
+                // 保存场景
+                if (!m_FileDialog.selectedFile.empty()) {
+                    SceneIO::Save(m_FileDialog.selectedFile, ssbo, lightSSBO);
+                }
+            }
+            m_FileDialog.show = false;
+        }
+        ImGui::EndDisabled();
+
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel##FDCancel")) {
+            m_FileDialog.show = false;
+        }
+
+        ImGui::End();
+    }
+}
+
+void ImGuiManager::RefreshFileList()
+{
+    m_FileDialog.entries.clear();
+
+    // 添加返回上级目录
+    if (m_FileDialog.currentPath != std::filesystem::path(m_FileDialog.currentPath).root_path()) {
+        m_FileDialog.entries.emplace_back(std::filesystem::path(m_FileDialog.currentPath).parent_path());
+    }
+
+    // 遍历当前目录
+    for (const auto& entry : std::filesystem::directory_iterator(m_FileDialog.currentPath)) {
+        if (entry.is_directory() ||
+            (entry.is_regular_file() && entry.path().extension() == ".scene")) {
+            m_FileDialog.entries.push_back(entry);
+        }
+    }
+
+    // 排序：目录在前，文件在后
+    std::sort(m_FileDialog.entries.begin(), m_FileDialog.entries.end(),
+        [](const auto& a, const auto& b) {
+        if (a.is_directory() != b.is_directory())
+            return a.is_directory();
+        return a.path().filename() < b.path().filename();
+    });
 }
 
 void ImGuiManager::HandleCameraMovement(Camera& camera, float deltaTime)
