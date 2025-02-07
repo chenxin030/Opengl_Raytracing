@@ -325,7 +325,6 @@ float calculateShadow(vec3 point, vec3 normal, Light light) {
     return 1.0;
 }
 
-// [修改后的computeLighting函数]
 vec3 computeLighting(vec3 P, vec3 N, Material mat, vec3 V) {
     vec3 Lo = vec3(0.0);
     
@@ -387,6 +386,7 @@ void main() {
         
         if(!intersectObjects(ray, mat, N, t)) {
             if(useSkybox) finalColor += throughput * texture(skybox, ray.direction).rgb;
+            else finalColor += throughput * vec3(0.0);
             break;
         }
         

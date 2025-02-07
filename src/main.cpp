@@ -28,6 +28,34 @@ const float quadVertices[] = {
      1.0f,  1.0f,  1.0f, 1.0f
 };
 
+void RenderQuad() {
+    static GLuint quadVAO = 0, quadVBO;
+    if (quadVAO == 0) {
+        float quadVertices[] = {
+            // 位置       // 纹理坐标
+            -1.0f,  1.0f, 0.0f, 1.0f,
+            -1.0f, -1.0f, 0.0f, 0.0f,
+             1.0f, -1.0f, 1.0f, 0.0f,
+
+            -1.0f,  1.0f, 0.0f, 1.0f,
+             1.0f, -1.0f, 1.0f, 0.0f,
+             1.0f,  1.0f, 1.0f, 1.0f
+        };
+        glGenVertexArrays(1, &quadVAO);
+        glGenBuffers(1, &quadVBO);
+        glBindVertexArray(quadVAO);
+        glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+    }
+    glBindVertexArray(quadVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+}
+
 // 鼠标回调函数
 void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
     if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
@@ -58,9 +86,11 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
 
 // 滚轮回调函数
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
-    camera.FOV -= (float)yoffset * camera.ZoomSpeed;
-    if (camera.FOV < 1.0f) camera.FOV = 1.0f;
-    if (camera.FOV > 90.0f) camera.FOV = 90.0f;
+    if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS){
+        camera.FOV -= (float)yoffset * camera.ZoomSpeed;
+        if (camera.FOV < 1.0f) camera.FOV = 1.0f;
+        if (camera.FOV > 90.0f) camera.FOV = 90.0f;
+    }
 }
 
 int main() {
@@ -118,6 +148,33 @@ int main() {
     SSBO ssbo;
     LightSSBO lightSSBO;
 
+    // bloom
+    GLuint bloomFBOs[2], bloomTextures[2];
+    glGenFramebuffers(2, bloomFBOs);
+    glGenTextures(2, bloomTextures);
+
+    // 创建亮度提取和模糊用的纹理
+    for (int i = 0; i < 2; i++) {
+        glBindTexture(GL_TEXTURE_2D, bloomTextures[i]);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, WIDTH, HEIGHT, 0, GL_RGBA, GL_FLOAT, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, bloomFBOs[i]);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, bloomTextures[i], 0);
+    }
+
+    // 检查帧缓冲完整性
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        std::cout << "Bloom Framebuffer not complete!" << std::endl;
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    Shader extractShader("shader/outputVs.glsl", "shader/brightness_extractFs.glsl");
+    Shader blurShader("shader/outputVs.glsl", "shader/gaussian_blurFs.glsl");
+    Shader bloomCombineShader("shader/outputVs.glsl", "shader/bloom_combineFs.glsl");
+
     while (!glfwWindowShouldClose(window)) {
 
         float currentFrame = glfwGetTime();
@@ -163,13 +220,38 @@ int main() {
         );
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
-        glClear(GL_COLOR_BUFFER_BIT);
-
-        outputShader.use();
+        // ------------------------- Bloom处理 -------------------------
+        // 步骤1: 亮度提取
+        glBindFramebuffer(GL_FRAMEBUFFER, bloomFBOs[0]);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        extractShader.use();
+        extractShader.setFloat("threshold", 1.0f); // 设置亮度阈值
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, outputTex);
-        glBindVertexArray(VAO);
-        glDrawArrays(GL_TRIANGLES, 0, 6);
+        RenderQuad(); // 渲染全屏四边形
+
+        // 步骤2: 高斯模糊（交替进行水平和垂直模糊，迭代次数越多效果越平滑）
+        bool horizontal = true;
+        blurShader.use();
+        for (int i = 0; i < 10; i++) { // 模糊迭代次数（例如10次）
+            glBindFramebuffer(GL_FRAMEBUFFER, bloomFBOs[horizontal]);
+            blurShader.setBool("horizontal", horizontal);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, bloomTextures[!horizontal]);
+            RenderQuad();
+            horizontal = !horizontal;
+        }
+
+        // 步骤3: 合并Bloom效果到最终输出
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        bloomCombineShader.use();
+        bloomCombineShader.setFloat("bloomStrength", 0.5f); // 调整Bloom强度
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, outputTex); // 原始场景
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, bloomTextures[!horizontal]); // 模糊后的高光
+        RenderQuad();
 
         imguiManager.EndFrame();
 

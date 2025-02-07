@@ -1,3 +1,7 @@
+#version 430 core
+
+in vec2 TexCoords;
+
 uniform sampler2D hdrTexture;
 uniform float threshold = 1.0;
 
