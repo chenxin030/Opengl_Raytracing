@@ -29,7 +29,7 @@ static std::string MaterialTypeToString(MaterialType type) {
     }
 }
 
-static ObjectType IntToObjectType(const std::string& str) {
+static ObjectType StringToObjectType(const std::string& str) {
     if (str == "SPHERE") return ObjectType::SPHERE;
     if (str == "PLANE") return ObjectType::PLANE;
     return ObjectType::SPHERE; // 默认值
@@ -47,8 +47,9 @@ static MaterialType StringToMaterialType(const std::string& str) {
     return MATERIAL_PLASTIC;
 }
 
-static void WriteObjectParams(std::ofstream& file, const Object& obj) {
-	file << " " << obj.position.x << " " << obj.position.y << " " << obj.position.z
+static void WriteObjectParams(std::ofstream& file, const Object& obj, const std::string& name) {
+    file << " " << name
+        << " " << obj.position.x << " " << obj.position.y << " " << obj.position.z
         << " " << obj.radius
         << " " << obj.normal.x << " " << obj.normal.y << " " << obj.normal.z
         << " " << obj.size.x << " " << obj.size.y
@@ -61,8 +62,9 @@ static void WriteObjectParams(std::ofstream& file, const Object& obj) {
 		<< " " << obj.material.specular;
 }
 
-static void WriteLightParams(std::ofstream& file, const Light& light) {
-	file << " " << light.position.x << " " << light.position.y << " " << light.position.z
+static void WriteLightParams(std::ofstream& file, const Light& light, const std::string& name) {
+	file << " " << name
+        << " " << light.position.x << " " << light.position.y << " " << light.position.z
 		<< " " << light.direction.x << " " << light.direction.y << " " << light.direction.z
 		<< " " << light.color.x << " " << light.color.y << " " << light.color.z
 		<< " " << light.intensity
@@ -72,7 +74,7 @@ static void WriteLightParams(std::ofstream& file, const Light& light) {
 
 class SceneIO {
 public:
-    static bool Load(const std::string& path, SSBO& ssbo, LightSSBO& lightSSBO) {
+    static bool Load(const std::string& path, std::vector<UIObject>& uiObjs, std::vector<UILight>& uiLights) {
         std::ifstream file(path);
         if (!file.is_open()) return false;
 
@@ -82,67 +84,70 @@ public:
             std::string type;
             iss >> type;
 
-            if (type == "OBJECT") ParseObject(iss, ssbo);
-            else if (type == "LIGHT") ParseLight(iss, lightSSBO);
+            if (type == "OBJECT") ParseObject(iss, uiObjs);
+            else if (type == "LIGHT") ParseLight(iss, uiLights);
         }
         return true;
     }
 
-    static bool Save(const std::string& path, SSBO& ssbo, LightSSBO& lightSSBO) {
+    static bool Save(const std::string& path, const std::vector<UIObject>& uiObjects, const std::vector<UILight>& uiLights) {
         std::ofstream file(path);
         if (!file.is_open()) return false;
 
         // 写入物体数据
-        for (const auto& obj : ssbo.objects) {
-            file << "OBJECT " << ObjectTypeToString(obj.type);
-            WriteObjectParams(file, obj);
+        for (const auto& uiObj : uiObjects) {
+            file << "OBJECT " << ObjectTypeToString(uiObj.obj.type);
+            WriteObjectParams(file, uiObj.obj, uiObj.name);
             file << "\n";
         }
 
         // 写入光源数据
-        for (const auto& light : lightSSBO.lights) {
-            file << "LIGHT " << LightTypeToString(light.type);
-            WriteLightParams(file, light);
+        for (const auto& uiLight : uiLights) {
+            file << "LIGHT " << LightTypeToString(uiLight.light.type);
+            WriteLightParams(file, uiLight.light, uiLight.name);
             file << "\n";
         }
         return true;
     }
 
 private:
-    static void ParseObject(std::istringstream& iss, SSBO& ssbo) {
-        Object obj;
-        std::string typeStr;
-        iss >> typeStr >> obj.position.x >> obj.position.y >> obj.position.z;
-        obj.type = IntToObjectType(typeStr);
+    static void ParseObject(std::istringstream& iss, std::vector<UIObject>& uiObjects) {
+        UIObject uiObj;
+        std::string typeStr, name;
+        iss >> typeStr >> name;
+        iss >> uiObj.obj.position.x >> uiObj.obj.position.y >> uiObj.obj.position.z;
+        uiObj.obj.type = StringToObjectType(typeStr);
 
-        iss >> obj.radius
-            >> obj.normal.x >> obj.normal.y >> obj.normal.z
-            >> obj.size.x >> obj.size.y;
+        iss >> uiObj.obj.radius
+            >> uiObj.obj.normal.x >> uiObj.obj.normal.y >> uiObj.obj.normal.z
+            >> uiObj.obj.size.x >> uiObj.obj.size.y;
 
         int matType;
         iss >> matType;
-        obj.material.type = static_cast<MaterialType>(matType);
-		iss >> obj.material.albedo.x >> obj.material.albedo.y >> obj.material.albedo.z
-			>> obj.material.metallic
-			>> obj.material.roughness
-			>> obj.material.ior
-			>> obj.material.transparency
-			>> obj.material.specular;
-        ssbo.objects.push_back(obj);
+        uiObj.obj.material.type = static_cast<MaterialType>(matType);
+		iss >> uiObj.obj.material.albedo.x >> uiObj.obj.material.albedo.y >> uiObj.obj.material.albedo.z
+			>> uiObj.obj.material.metallic
+			>> uiObj.obj.material.roughness
+			>> uiObj.obj.material.ior
+			>> uiObj.obj.material.transparency
+			>> uiObj.obj.material.specular;
+        snprintf(uiObj.name, sizeof(uiObj.name), "%s", name.c_str());
+        uiObjects.push_back(uiObj);
     }
 
-    static void ParseLight(std::istringstream& iss, LightSSBO& lightSSBO) {
-        Light light;
-        std::string typeStr;
-        iss >> typeStr;
-        light.type = StringToLightType(typeStr);
+    static void ParseLight(std::istringstream& iss, std::vector<UILight>& uiLights) {
+        UILight uiLight;
+        std::string typeStr, name;
+        iss >> typeStr >> name;
+        uiLight.light.type = StringToLightType(typeStr);
 
-		iss >> light.position.x >> light.position.y >> light.position.z
-			>> light.direction.x >> light.direction.y >> light.direction.z
-			>> light.color.x >> light.color.y >> light.color.z
-			>> light.intensity
-			>> light.radius
-			>> light.samples;
-        lightSSBO.lights.push_back(light);
+		iss >> uiLight.light.position.x >> uiLight.light.position.y >> uiLight.light.position.z
+			>> uiLight.light.direction.x >> uiLight.light.direction.y >> uiLight.light.direction.z
+			>> uiLight.light.color.x >> uiLight.light.color.y >> uiLight.light.color.z
+			>> uiLight.light.intensity
+			>> uiLight.light.radius
+			>> uiLight.light.samples;
+        snprintf(uiLight.name, sizeof(uiLight.name), "%s", name.c_str());
+        uiLights.push_back(uiLight);
     }
 };

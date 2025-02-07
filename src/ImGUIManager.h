@@ -18,15 +18,16 @@ public:
     void EndFrame();
 
     void DrawObjectsList(class SSBO& ssbo);
-    void DrawCameraControls(Camera& camera);
     void DrawLightController(LightSSBO& lightSSBO);
+    void DrawCameraControls(Camera& camera);
     void DrawFPS();
 
-	// Load / Save Scene
-    void DrawSceneIO(SSBO& ssbo, LightSSBO& lightSSBO);
     GLuint GetCurrentSkyboxTexture() const { return m_CurrentSkyboxTexture; }
     bool IsSkyboxEnabled() const { return m_UseSkybox; }
     void ChooseSkybox();
+
+    // Load / Save Scene
+    void DrawSceneIO(SSBO& ssbo, LightSSBO& lightSSBO);
     struct FileDialog {
         bool show = false;
         bool isOpenMode = true;
@@ -40,6 +41,7 @@ public:
 	void HandleCameraMovement(Camera& camera, float deltaTime);
     
     std::vector<UIObject> m_UIObjects;
+    std::vector<UILight> m_UILights;
 private:
 
     GLFWwindow* m_Window;

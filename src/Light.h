@@ -13,3 +13,10 @@ struct Light {
     alignas(4)   float radius = 0.0f;                               // 点光源影响半径（可选）
     alignas(4)   int samples = 1;                                   // 面光源采样次数（可选）
 };
+
+
+// UI用对象（包含名称）
+struct UILight {
+    char name[128] = "New Light";
+    Light light;
+};
