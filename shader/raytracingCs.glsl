@@ -57,7 +57,8 @@ uniform vec3 cameraPos;
 uniform vec3 cameraDir;
 uniform vec3 cameraUp;
 uniform vec3 cameraRight;
-uniform float fov;
+uniform float fov = 60.0;          // 垂直视场角（角度制）
+uniform float focalLength = 1.0;   // 焦距
 
 uniform samplerCube skybox;
 uniform bool useSkybox;
@@ -144,6 +145,80 @@ bool intersectObjects(Ray ray, out Material hitMaterial, out vec3 hitNormal, out
     }
     t = minT;
     return hit;
+}
+
+// 原理1：光线生成
+void generateCameraRay(out Ray ray) {
+    ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 imageSize = imageSize(outputImage);
+    
+    // 计算屏幕坐标（-1到1范围）
+    vec2 uv = (vec2(pixelCoords) + 0.5) / vec2(imageSize);
+    uv = uv * 2.0 - 1.0;
+    
+    // 根据FOV计算实际屏幕坐标
+    float aspect = float(imageSize.x) / float(imageSize.y);
+    float tanFov = tan(radians(fov) * 0.5);
+    uv.x *= aspect * tanFov * focalLength;
+    uv.y *= tanFov * focalLength;
+    
+    ray.origin = cameraPos;
+    ray.direction = normalize(cameraDir + uv.x * cameraRight + uv.y * cameraUp);
+    ray.energy = 1.0;
+    ray.depth = 0;
+}
+
+// Schlick近似法
+float fresnelSchlick(float cosTheta, float ior) {
+    float r0 = pow((1.0 - ior) / (1.0 + ior), 2.0);
+    return r0 + (1.0 - r0) * pow(1.0 - cosTheta, 5.0); // = R：反射的占比
+}
+
+// 原理2：基于物理的材质（PBR）
+vec3 computePBR(Material mat, vec3 N, vec3 V, vec3 L, vec3 H, vec3 radiance) {
+    // 粗糙度重映射
+    float alpha = pow(mat.roughness, 2.0);
+    
+    // 法线分布函数（GGX/Trowbridge-Reitz）
+    float NDF = alpha * alpha / (PI * pow(pow(max(dot(N, H), 0.0), 2.0) 
+        * (alpha * alpha - 1.0) + 1.0, 2.0));
+    
+    // 几何遮蔽函数（Schlick-GGX）
+    float k = pow(mat.roughness + 1.0, 2.0) / 8.0;
+    float G = max(dot(N, V), 0.0) / (max(dot(N, V), 0.0) * (1.0 - k) + k);
+    G *= max(dot(N, L), 0.0) / (max(dot(N, L), 0.0) * (1.0 - k) + k);
+    
+    // 菲涅尔方程（Schlick近似）
+    vec3 F0 = mix(vec3(0.04), mat.albedo, mat.metallic);
+    vec3 F = F0 + (1.0 - F0) * pow(1.0 - max(dot(H, V), 0.0), 5.0);
+    
+    // 组合BRDF
+    vec3 numerator = NDF * G * F;
+    float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0);
+    vec3 specular = numerator / max(denominator, 0.001);
+    
+    // 漫反射（能量守恒）
+    vec3 kD = (1.0 - F) * (1.0 - mat.metallic);
+    vec3 diffuse = kD * mat.albedo / PI;
+    
+    return (diffuse + specular) * radiance * max(dot(N, L), 0.0);
+}
+
+// 原理3：折射处理（使用Snell定律）
+vec3 calculateRefraction(Ray ray, vec3 hitPoint, vec3 N, Material mat, inout float energy) {
+    bool entering = dot(ray.direction, N) < 0.0;
+    float eta = entering ? (1.0 / mat.ior) : mat.ior;
+    vec3 normal = entering ? N : -N;
+    
+    // 计算折射方向
+    vec3 refractDir = refract(normalize(ray.direction), normal, eta);
+    if (dot(refractDir, refractDir) < 0.001) { // 全内反射
+        refractDir = reflect(ray.direction, normal);
+    }
+    
+    // 更新光线能量
+    energy *= (1.0 - fresnelSchlick(max(dot(-ray.direction, normal), 0.0), mat.ior));
+    return refractDir;
 }
 
 // 随机数生成器（用于采样分布）
@@ -250,16 +325,11 @@ float calculateShadow(vec3 point, vec3 normal, Light light) {
     return 1.0;
 }
 
-// Schlick近似法
-float fresnelSchlick(float cosTheta, float ior) {
-    float r0 = pow((1.0 - ior) / (1.0 + ior), 2.0);
-    return r0 + (1.0 - r0) * pow(1.0 - cosTheta, 5.0); // = R：反射的占比
-}
-
-vec3 computeLighting(vec3 point, vec3 normal, Material mat, vec3 viewDir) {
-    vec3 totalLight = vec3(0.0);
+// [修改后的computeLighting函数]
+vec3 computeLighting(vec3 P, vec3 N, Material mat, vec3 V) {
+    vec3 Lo = vec3(0.0);
     
-    for(int i = 0; i < numLights; i++) {
+    for(int i = 0; i < numLights; ++i) {
         Light light = lights[i];
         vec3 lightDir;
         // 衰减
@@ -268,7 +338,7 @@ vec3 computeLighting(vec3 point, vec3 normal, Material mat, vec3 viewDir) {
         
         // 计算基础光照参数
         if(light.type == 0) { // 点光源
-            lightDir = light.position - point;
+            lightDir = light.position - P;
             lightDistance = length(lightDir);
             attenuation = 1.0 / (1.0 + 0.1 * lightDistance + 0.01 * lightDistance * lightDistance);
             lightDir = normalize(lightDir);
@@ -279,7 +349,7 @@ vec3 computeLighting(vec3 point, vec3 normal, Material mat, vec3 viewDir) {
         }
         else if(light.type == 2) { // 区域光
             // 使用基于物理的衰减
-            float distance = length(light.position - point);
+            float distance = length(light.position - P);
             attenuation = 1.0 / (distance * distance);
         
             // 计算光源法线方向贡献
@@ -289,127 +359,66 @@ vec3 computeLighting(vec3 point, vec3 normal, Material mat, vec3 viewDir) {
         }
         
         // 计算阴影因子
-        float shadowFactor = calculateShadow(point, normal, light);
+        float shadowFactor = calculateShadow(P, N, light);
         
-        // 漫反射项
-        float NdotL = max(dot(normal, lightDir), 0.0);
-        vec3 diffuse = mat.albedo * light.color * NdotL;
+        // 使用PBR计算光照
+        vec3 L = normalize(lightDir);
+        vec3 H = normalize(V + L);
+        vec3 radiance = light.color * attenuation * light.intensity;
         
-        // 镜面反射项
-        vec3 specular = vec3(0.0);
-        vec3 H = normalize(lightDir + viewDir);
-        float NdotH = max(dot(normal, H), 0.0);
-        
-        if(mat.type == 0) { // 金属
-            float alpha = mat.roughness * mat.roughness;
-            float alpha2 = alpha * alpha;
-            float denom = NdotH * NdotH * (alpha2 - 1.0) + 1.0;
-            float D = alpha2 / (3.14159265 * denom * denom);
-            // 修复后（加入菲涅尔项F和几何项G）
-            float F = fresnelSchlick(max(dot(H, viewDir), 0.0), mat.ior);
-            float G = 1.0 / (1.0 + (mat.roughness + sqrt(mat.roughness)) * NdotL);
-            specular = (D * F * G) * mat.metallic * light.color;
-        }
-        else if(mat.type == 1) { // 电介质
-            float F0 = pow((1.0 - mat.ior) / (1.0 + mat.ior), 2.0);
-            float F = F0 + (1.0 - F0) * pow(1.0 - max(dot(viewDir, normal), 0.0), 5.0);
-            specular = vec3(F) * light.color;
-        }
-        else if(mat.type == 2) { // 塑料
-            specular = light.color * pow(NdotH, 32.0) * mat.specular;
-        }
-        
-        // 能量守恒
-        float kD = (1.0 - mat.metallic) * (1.0 - mat.transparency);
-        vec3 contribution = (kD * diffuse + specular) * attenuation * light.intensity;
-        
-        totalLight += contribution * shadowFactor;
+        Lo += computePBR(mat, N, V, L, H, radiance) * shadowFactor;
     }
-    
-    return totalLight;
+    return Lo;
 }
 
 void main() {
     ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);
-    ivec2 imageSize = imageSize(outputImage);
-    
-    // 计算UV坐标
-    vec2 uv = (vec2(pixelCoords) + 0.5) / vec2(imageSize); // 中心采样
-    uv = uv * 2.0 - 1.0;
-    
-    // 初始化光线
+
     Ray ray;
-    ray.origin = cameraPos;
-    ray.direction = normalize(cameraDir + uv.x * cameraRight + uv.y * cameraUp);
-    ray.energy = 1.0;
-    ray.depth = 0;
+    generateCameraRay(ray);
     
     vec3 finalColor = vec3(0.0);
-    vec3 accumulatedColor = vec3(1.0); // 颜色累积乘数
+    vec3 throughput = vec3(1.0);
     
-    // 光线迭代循环（基于递归深度）
-    while(ray.depth < MAX_RAY_DEPTH && ray.energy > 0.01) {
-        Material hitMaterial;
-        vec3 hitNormal;
-        float hitT;
+    for(int depth = 0; depth < MAX_RAY_DEPTH; ++depth) {
+        Material mat;
+        vec3 N;
+        float t;
         
-        if(intersectObjects(ray, hitMaterial, hitNormal, hitT)) {
-            vec3 hitPoint = ray.origin + ray.direction * hitT;
-            
-            // 计算视角方向
-            vec3 viewDir = -ray.direction;
-            
-            // 菲涅尔反射率计算
-            float cosTheta = dot(ray.direction, hitNormal);
-            float fresnel = fresnelSchlick(cosTheta, hitMaterial.ior);
-            
-            // 表面颜色计算（包含光照）
-            vec3 surfaceColor = computeLighting(
-                hitPoint, 
-                hitNormal, 
-                hitMaterial, 
-                viewDir
-            ) * hitMaterial.albedo;
-            
-            // 混合到最终颜色
-            finalColor += accumulatedColor * surfaceColor * (1.0 - hitMaterial.transparency);
-            
-            // 准备下一次光线追踪
-            if(hitMaterial.transparency > 0.01) {
-                // 修复后（判断光线进出材质）
-                float eta = (cosTheta > 0.0) ? 1.0/hitMaterial.ior : hitMaterial.ior;
-                vec3 refractDir = refract(viewDir, sign(cosTheta)*hitNormal, eta);
-                
-                Ray refractRay = Ray(
-                    hitPoint - 0.001 * hitNormal,
-                    refractDir,
-                    ray.energy * (1.0 - fresnel) * hitMaterial.transparency,
-                    ray.depth + 1
-                );
-                
-                // 更新累积颜色
-                accumulatedColor *= hitMaterial.albedo * (1.0 - fresnel);
-                ray = refractRay;
-            } else {
-                // 反射路径
-                vec3 reflectDir = reflect(viewDir, hitNormal);
-                Ray reflectRay = Ray(
-                    hitPoint + 0.001 * hitNormal,
-                    reflectDir,
-                    ray.energy * fresnel,
-                    ray.depth + 1
-                );
-                
-                accumulatedColor *= hitMaterial.albedo * fresnel;
-                ray = reflectRay;
-            }
-        } else {
-            // 处理天空盒
-            if(useSkybox) {
-                finalColor += accumulatedColor * texture(skybox, ray.direction).rgb;
-            }
+        if(!intersectObjects(ray, mat, N, t)) {
+            if(useSkybox) finalColor += throughput * texture(skybox, ray.direction).rgb;
             break;
         }
+        
+        vec3 P = ray.origin + ray.direction * t;
+        vec3 V = normalize(-ray.direction);
+        
+        // 计算表面光照
+        vec3 Lo = computeLighting(P, N, mat, V);
+        finalColor += throughput * Lo;
+        
+        // 计算反射/折射
+        float F = fresnelSchlick(max(dot(V, N), 0.0), mat.ior);
+        
+        // 俄罗斯轮盘赌终止条件
+        if(depth > 2) {
+            float continueProb = min(max(throughput.x, max(throughput.y, throughput.z)) * 0.95, 0.95);
+            if(random(gl_GlobalInvocationID.xy + depth) > continueProb) break;
+            throughput /= continueProb;
+        }
+        
+        // 选择反射或折射
+        if(mat.transparency > 0.0) {
+            ray.direction = calculateRefraction(ray, P, N, mat, ray.energy);
+            ray.origin = P - N * 0.001;
+            throughput *= mat.albedo * (1.0 - F) * mat.transparency;
+        } else {
+            ray.direction = reflect(ray.direction, N);
+            ray.origin = P + N * 0.001;
+            throughput *= mat.albedo * F;
+        }
+        
+        ray.energy *= 0.8; // 能量衰减
     }
     
     imageStore(outputImage, pixelCoords, vec4(finalColor, 1.0));
