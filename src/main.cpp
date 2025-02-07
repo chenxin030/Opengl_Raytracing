@@ -16,18 +16,6 @@ float lastY = HEIGHT / 2.0f;
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 
-// 全屏四边形的顶点数据
-const float quadVertices[] = {
-    // 位置          // 纹理坐标
-    -1.0f,  1.0f,  0.0f, 1.0f,
-    -1.0f, -1.0f,  0.0f, 0.0f,
-     1.0f, -1.0f,  1.0f, 0.0f,
-
-    -1.0f,  1.0f,  0.0f, 1.0f,
-     1.0f, -1.0f,  1.0f, 0.0f,
-     1.0f,  1.0f,  1.0f, 1.0f
-};
-
 void RenderQuad() {
     static GLuint quadVAO = 0, quadVBO;
     if (quadVAO == 0) {
@@ -93,6 +81,20 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
     }
 }
 
+// TAA
+// Halton序列生成函数（低差异序列）
+float haltonSequence(int index, int base) {
+	float result = 0.0f;
+	float f = 1.0f / base;
+	int i = index;
+	while (i > 0) {
+		result += f * (i % base);
+		i = (int)floor(i / base);
+		f /= base;
+	}
+	return result;
+}
+
 int main() {
 
     if (!glfwInit()) {
@@ -132,17 +134,6 @@ int main() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glBindImageTexture(0, outputTex, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
 
-    GLuint VAO, VBO;
-    glGenVertexArrays(1, &VAO);
-    glGenBuffers(1, &VBO);
-    glBindVertexArray(VAO);
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-
     ImGuiManager imguiManager(window);
 
     SSBO ssbo;
@@ -171,9 +162,31 @@ int main() {
         std::cout << "Bloom Framebuffer not complete!" << std::endl;
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
+    // TAA
+    // 添加历史缓冲区
+    GLuint historyTex[2]; // 双缓冲
+    GLuint taaFBO;
+
+    // 初始化部分（在创建Bloom FBO后添加）
+    glGenTextures(2, historyTex);
+    for (int i = 0; i < 2; i++) {
+        glBindTexture(GL_TEXTURE_2D, historyTex[i]);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, WIDTH, HEIGHT, 0, GL_RGBA, GL_FLOAT, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
+
+    glGenFramebuffers(1, &taaFBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, taaFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, historyTex[0], 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
     Shader extractShader("shader/outputVs.glsl", "shader/brightness_extractFs.glsl");
     Shader blurShader("shader/outputVs.glsl", "shader/gaussian_blurFs.glsl");
     Shader bloomCombineShader("shader/outputVs.glsl", "shader/bloom_combineFs.glsl");
+    Shader taaShader("shader/outputVs.glsl", "shader/taaFs.glsl");
 
     while (!glfwWindowShouldClose(window)) {
 
@@ -188,13 +201,17 @@ int main() {
         // 设置视口匹配实际尺寸（有这3行才能放满整个窗口）
         glViewport(0, 0, fbWidth, fbHeight);
 
+        static int frameCount = 0;
+        int currentHistory = frameCount % 2;
+
         imguiManager.BeginFrame();
 		imguiManager.HandleCameraMovement(camera, deltaTime);
         imguiManager.DrawFPS();
         imguiManager.DrawObjectsList(ssbo);
         imguiManager.DrawLightController(lightSSBO);
         imguiManager.DrawCameraControls(camera);
-        imguiManager.DrawSceneIO(ssbo, lightSSBO);
+        imguiManager.LoadSave(ssbo, lightSSBO);
+		imguiManager.DrawTAASettings();
         imguiManager.ChooseSkybox();
         
         raytracingShader.use();
@@ -252,6 +269,33 @@ int main() {
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, bloomTextures[!horizontal]); // 模糊后的高光
         RenderQuad();
+
+        // TAA
+        if (imguiManager.IsTAAEnabled()) {
+            glBindFramebuffer(GL_FRAMEBUFFER, taaFBO);
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, historyTex[currentHistory], 0);
+
+            taaShader.use();
+            taaShader.setFloat("uBlendFactor", imguiManager.GetTAABlendFactor());
+            taaShader.setInt("uCurrentFrame", 0);
+            taaShader.setInt("uHistory", 1);
+            taaShader.setFloat("uJitterX", haltonSequence(frameCount % 8, 2) * 0.5 / WIDTH);
+            taaShader.setFloat("uJitterY", haltonSequence(frameCount % 8, 3) * 0.5 / HEIGHT);
+
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, outputTex); // 当前帧
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, historyTex[1 - currentHistory]); // 上一帧
+
+            RenderQuad();
+
+            // 交换历史缓冲
+            frameCount++;
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glBindTexture(GL_TEXTURE_2D, historyTex[currentHistory]);
+            glGenerateMipmap(GL_TEXTURE_2D); // 可选：生成Mipmap用于下帧采样
+        }
+
 
         imguiManager.EndFrame();
 

@@ -362,8 +362,24 @@ void ImGuiManager::DrawFPS() {
     ImGui::End();
 }
 
-void ImGuiManager::DrawSceneIO(SSBO& ssbo, LightSSBO& lightSSBO) {
-    ImGui::Begin("Scene IO");
+void ImGuiManager::DrawTAASettings()
+{
+    ImGui::SetNextWindowPos(ImVec2(10, 160), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowCollapsed(true, ImGuiCond_FirstUseEver);
+    ImGui::Begin("Anti-Aliasing (TAA)");
+
+    ImGui::Checkbox("Enable TAA", &m_EnableTAA);
+    if (m_EnableTAA) {
+        ImGui::SliderFloat("Blend Factor", &m_TAABlendFactor, 0.01f, 0.5f);
+    }
+
+    ImGui::End();
+}
+
+void ImGuiManager::LoadSave(SSBO& ssbo, LightSSBO& lightSSBO) {
+    ImGui::SetNextWindowPos(ImVec2(10, 130), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowCollapsed(true, ImGuiCond_FirstUseEver);
+    ImGui::Begin("Load/Save");
 
     if (ImGui::Button("Load Scene")) {
         m_FileDialog.show = true;

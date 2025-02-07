@@ -21,13 +21,15 @@ public:
     void DrawLightController(LightSSBO& lightSSBO);
     void DrawCameraControls(Camera& camera);
     void DrawFPS();
+	void DrawTAASettings();
 
+	// Skybox
     GLuint GetCurrentSkyboxTexture() const { return m_CurrentSkyboxTexture; }
     bool IsSkyboxEnabled() const { return m_UseSkybox; }
     void ChooseSkybox();
 
     // Load / Save Scene
-    void DrawSceneIO(SSBO& ssbo, LightSSBO& lightSSBO);
+    void LoadSave(SSBO& ssbo, LightSSBO& lightSSBO);
     struct FileDialog {
         bool show = false;
         bool isOpenMode = true;
@@ -37,6 +39,10 @@ public:
     } m_FileDialog;
     void DrawFileDialog(SSBO& ssbo, LightSSBO& lightSSBO);
     void RefreshFileList();
+
+    // TAA
+	bool IsTAAEnabled() const { return m_EnableTAA; }
+	float GetTAABlendFactor() const { return m_TAABlendFactor; }
 
 	void HandleCameraMovement(Camera& camera, float deltaTime);
     
@@ -68,6 +74,10 @@ private:
         "Sky on Fire",
         "Vestibule"
     };
+
+    // TAA
+    bool m_EnableTAA = true;
+    float m_TAABlendFactor = 0.1f; // 历史帧混合系数
 
     void SetupStyle();
 };

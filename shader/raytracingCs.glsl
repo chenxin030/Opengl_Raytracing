@@ -148,12 +148,13 @@ bool intersectObjects(Ray ray, out Material hitMaterial, out vec3 hitNormal, out
 }
 
 // 原理1：光线生成
-void generateCameraRay(out Ray ray) {
+void generateCameraRay(out Ray ray, vec2 jitter) {
     ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);
     ivec2 imageSize = imageSize(outputImage);
     
     // 计算屏幕坐标（-1到1范围）
-    vec2 uv = (vec2(pixelCoords) + 0.5) / vec2(imageSize);
+    // 添加抖动偏移
+    vec2 uv = (vec2(pixelCoords) + 0.5 + jitter) / vec2(imageSize);
     uv = uv * 2.0 - 1.0;
     
     // 根据FOV计算实际屏幕坐标
@@ -373,8 +374,13 @@ vec3 computeLighting(vec3 P, vec3 N, Material mat, vec3 V) {
 void main() {
     ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);
 
+    vec2 jitter = vec2(
+            random(pixelCoords + vec2(1, 0)),
+            random(pixelCoords + vec2(0, 1))
+        ) - 0.5;
+
     Ray ray;
-    generateCameraRay(ray);
+    generateCameraRay(ray, jitter);
     
     vec3 finalColor = vec3(0.0);
     vec3 throughput = vec3(1.0);
