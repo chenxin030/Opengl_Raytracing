@@ -43,8 +43,6 @@ void RenderQuad() {
     glDrawArrays(GL_TRIANGLES, 0, 6);
     glBindVertexArray(0);
 }
-
-// 鼠标回调函数
 void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
     if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
         if (firstMouse) {
@@ -71,8 +69,6 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
         firstMouse = true;
     }
 }
-
-// 滚轮回调函数
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
     if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS){
         camera.FOV -= (float)yoffset * camera.ZoomSpeed;
@@ -81,8 +77,7 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
     }
 }
 
-// TAA
-// Halton序列生成函数（低差异序列）
+// TAA： Halton序列生成函数（低差异序列）
 float haltonSequence(int index, int base) {
 	float result = 0.0f;
 	float f = 1.0f / base;
@@ -93,6 +88,62 @@ float haltonSequence(int index, int base) {
 		f /= base;
 	}
 	return result;
+}
+
+// GPU Time Query
+enum QueryStages {
+    RAYTRACE_START,
+    RAYTRACE_END,
+    BLOOM_EXTRACT_START,
+    BLOOM_EXTRACT_END,
+    BLOOM_BLUR_START,
+    BLOOM_BLUR_END,
+    TAA_START,
+    TAA_END,
+    NUM_QUERIES_PER_FRAME
+};
+const int QUERY_FRAME_COUNT = 2; // 双缓冲
+GLuint queryPool[QUERY_FRAME_COUNT][NUM_QUERIES_PER_FRAME];
+int currentQueryIndex = 0;
+std::vector<float> frameTimeHistory(60, 0.0f);
+
+GPUTimingData gpuTiming[QUERY_FRAME_COUNT];
+
+void ProcessQueries() {
+    int readIndex = (currentQueryIndex - 1 + QUERY_FRAME_COUNT) % QUERY_FRAME_COUNT;
+
+    GLint available;
+    glGetQueryObjectiv(queryPool[readIndex][TAA_END], GL_QUERY_RESULT_AVAILABLE, &available);
+
+    if (available) {
+        GLuint64 start, end;
+
+        // 光线追踪
+        glGetQueryObjectui64v(queryPool[readIndex][RAYTRACE_START], GL_QUERY_RESULT, &start);
+        glGetQueryObjectui64v(queryPool[readIndex][RAYTRACE_END], GL_QUERY_RESULT, &end);
+        gpuTiming[readIndex].raytracingTime = (end - start) / 1e6;
+
+        // Bloom提取
+        glGetQueryObjectui64v(queryPool[readIndex][BLOOM_EXTRACT_START], GL_QUERY_RESULT, &start);
+        glGetQueryObjectui64v(queryPool[readIndex][BLOOM_EXTRACT_END], GL_QUERY_RESULT, &end);
+        gpuTiming[readIndex].bloomExtractTime = (end - start) / 1e6;
+
+        // Bloom模糊
+        glGetQueryObjectui64v(queryPool[readIndex][BLOOM_BLUR_START], GL_QUERY_RESULT, &start);
+        glGetQueryObjectui64v(queryPool[readIndex][BLOOM_BLUR_END], GL_QUERY_RESULT, &end);
+        gpuTiming[readIndex].bloomBlurTime = (end - start) / 1e6;
+
+        // TAA
+        glGetQueryObjectui64v(queryPool[readIndex][TAA_START], GL_QUERY_RESULT, &start);
+        glGetQueryObjectui64v(queryPool[readIndex][TAA_END], GL_QUERY_RESULT, &end);
+        gpuTiming[readIndex].taaTime = (end - start) / 1e6;
+
+        // 更新历史
+        frameTimeHistory.erase(frameTimeHistory.begin());
+        frameTimeHistory.push_back(gpuTiming[readIndex].raytracingTime);
+
+        gpuTiming[readIndex].available = true;
+    }
 }
 
 int main() {
@@ -162,8 +213,7 @@ int main() {
         std::cout << "Bloom Framebuffer not complete!" << std::endl;
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-    // TAA
-    // 添加历史缓冲区
+    // TAA： 添加历史缓冲区
     GLuint historyTex[2]; // 双缓冲
     GLuint taaFBO;
 
@@ -188,11 +238,17 @@ int main() {
     Shader bloomCombineShader("shader/outputVs.glsl", "shader/bloom_combineFs.glsl");
     Shader taaShader("shader/outputVs.glsl", "shader/taaFs.glsl");
 
+    // GPU Time Query
+    glGenQueries(QUERY_FRAME_COUNT * NUM_QUERIES_PER_FRAME, &queryPool[0][0]);
+
     while (!glfwWindowShouldClose(window)) {
 
         float currentFrame = glfwGetTime();
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
+
+		// GPU Time Query
+        int activeIndex = currentQueryIndex % QUERY_FRAME_COUNT;
 
         // 获取实际帧缓冲尺寸（物理像素）
         int fbWidth, fbHeight;
@@ -230,15 +286,18 @@ int main() {
         }
         raytracingShader.setBool("useSkybox", imguiManager.IsSkyboxEnabled());
 
+        glQueryCounter(queryPool[activeIndex][RAYTRACE_START], GL_TIMESTAMP);
         glDispatchCompute(
             (WIDTH + 15) / 16,  // 向上取整
             (HEIGHT + 15) / 16,
             1
         );
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+        glQueryCounter(queryPool[activeIndex][RAYTRACE_END], GL_TIMESTAMP);
 
         // ------------------------- Bloom处理 -------------------------
         // 步骤1: 亮度提取
+        glQueryCounter(queryPool[activeIndex][BLOOM_EXTRACT_START], GL_TIMESTAMP);
         glBindFramebuffer(GL_FRAMEBUFFER, bloomFBOs[0]);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         extractShader.use();
@@ -246,8 +305,10 @@ int main() {
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, outputTex);
         RenderQuad(); // 渲染全屏四边形
+        glQueryCounter(queryPool[activeIndex][BLOOM_EXTRACT_END], GL_TIMESTAMP);
 
         // 步骤2: 高斯模糊（交替进行水平和垂直模糊，迭代次数越多效果越平滑）
+        glQueryCounter(queryPool[activeIndex][BLOOM_BLUR_START], GL_TIMESTAMP);
         bool horizontal = true;
         blurShader.use();
         for (int i = 0; i < 10; i++) { // 模糊迭代次数（例如10次）
@@ -258,6 +319,7 @@ int main() {
             RenderQuad();
             horizontal = !horizontal;
         }
+        glQueryCounter(queryPool[activeIndex][BLOOM_BLUR_END], GL_TIMESTAMP);
 
         // 步骤3: 合并Bloom效果到最终输出
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -269,9 +331,12 @@ int main() {
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, bloomTextures[!horizontal]); // 模糊后的高光
         RenderQuad();
+        glQueryCounter(queryPool[activeIndex][3], GL_TIMESTAMP);
 
         // TAA
         if (imguiManager.IsTAAEnabled()) {
+            glQueryCounter(queryPool[activeIndex][TAA_START], GL_TIMESTAMP);
+
             glBindFramebuffer(GL_FRAMEBUFFER, taaFBO);
             glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, historyTex[currentHistory], 0);
 
@@ -294,8 +359,18 @@ int main() {
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
             glBindTexture(GL_TEXTURE_2D, historyTex[currentHistory]);
             glGenerateMipmap(GL_TEXTURE_2D); // 可选：生成Mipmap用于下帧采样
+
+            glQueryCounter(queryPool[activeIndex][TAA_END], GL_TIMESTAMP);
         }
 
+        ProcessQueries();
+        currentQueryIndex++;
+        int activeIdx = (currentQueryIndex - 1) % QUERY_FRAME_COUNT;
+        imguiManager.DrawPerformanceStats(
+            deltaTime * 1000.0f,
+            gpuTiming[activeIdx],
+            frameTimeHistory
+        );
 
         imguiManager.EndFrame();
 

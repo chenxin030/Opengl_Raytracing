@@ -227,34 +227,47 @@ float random(vec2 st) {
     return fract(sin(dot(st.xy, vec2(12.9898,78.233)))*43758.5453123);
 }
 
+float haltonSequence(int index, int base) {
+    float result = 0.0;
+    float f = 1.0 / base;
+    int i = index;
+    while(i > 0) {
+        result += f * (i % base);
+        i = i / base;
+        f = f / base;
+    }
+    return result;
+}
+
 // 修改区域光源采样函数
 vec3 sampleAreaLight(Light light, vec3 point, vec2 rand, out float pdf) {
     // 极坐标采样（余弦加权）
     float theta = 2.0 * PI * rand.x;
-    float r = sqrt(rand.y);
-    vec2 disk = r * vec2(cos(theta), sin(theta));
+    float r = sqrt(rand.y);// 均匀分布
     
     // 构建光源坐标系
-    vec3 normal = normalize(light.direction);
+    vec3 normal = normalize(-light.direction); // 修正方向
     vec3 tangent = normalize(cross(normal, vec3(0,1,0)));
-    if(length(tangent) < 0.1) tangent = cross(normal, vec3(1,0,0));
-    vec3 bitangent = cross(normal, tangent);
+    if(length(tangent) < 0.1) 
+        tangent = normalize(cross(normal, vec3(1,0,0)));
+    vec3 bitangent = normalize(cross(normal, tangent));
     
     // 生成采样点
+    vec2 disk = r * vec2(cos(theta), sin(theta));
     vec3 samplePos = light.position + 
                     light.radius * (disk.x * tangent + disk.y * bitangent);
     
-    // 计算概率密度函数(PDF)
-    // 修复后（正确面积计算）
-    float area = PI * light.radius * light.radius;
+    // 计算概率密度函数(PDF)（面积倒数）
+    float area = light.radius * light.radius * PI; // 正确面积计算
     pdf = 1.0 / (area * light.samples);
+
     return samplePos;
 }
 
 float calculateShadow(vec3 point, vec3 normal, Light light) {
     float shadow = 0.0;
-    int validSamples = 0;
-    
+    float totalWeight = 0.0;
+
     if(light.type == 0) { // 点光源
         vec3 lightDir = light.position - point;
         float lightDistance = length(lightDir);
@@ -269,7 +282,7 @@ float calculateShadow(vec3 point, vec3 normal, Light light) {
         vec3 tempNormal;
         float t;
         if(intersectObjects(shadowRay, tempMat, tempNormal, t) && t < lightDistance) {
-            return 0.5; // 完全阴影
+            return 0.0; // 完全遮挡
         }
         return 1.0;
     }
@@ -285,24 +298,29 @@ float calculateShadow(vec3 point, vec3 normal, Light light) {
         vec3 tempNormal;
         float t;
         if(intersectObjects(shadowRay, tempMat, tempNormal, t)) {
-            return 0.5; // 完全阴影
+            return 0.0; // 完全遮挡
         }
         return 1.0;
     }
-    else if(light.type == 2) { // 区域光（重要性采样）
-        float totalWeight = 0.0;
-        float shadow = 0.0;
+    else if(light.type == 2) { // 区域光（物理正确采样）
+        vec3 lightNormal = normalize(-light.direction); // 添加负号
+        float lightRadius = light.radius;
+        float lightArea = PI * lightRadius * lightRadius;
         
         for(int i = 0; i < light.samples; i++) {
-            vec2 rand = vec2(random(point.xy + i), random(point.yz + i));
+            // 使用Halton序列生成低差异随机数
+            vec2 rand = vec2(
+                haltonSequence(i, 2),
+                haltonSequence(i, 3)
+            );
+            
             float pdf;
             vec3 samplePos = sampleAreaLight(light, point, rand, pdf);
-            
             vec3 lightDir = samplePos - point;
             float lightDistance = length(lightDir);
             lightDir = normalize(lightDir);
             
-            // 计算可见性
+            // 可见性测试
             Ray shadowRay;
             shadowRay.origin = point + normal * 0.001;
             shadowRay.direction = lightDir;
@@ -311,18 +329,29 @@ float calculateShadow(vec3 point, vec3 normal, Light light) {
             Material tempMat;
             vec3 tempNormal;
             float t;
-            if(!intersectObjects(shadowRay, tempMat, tempNormal, t) || t > lightDistance) {
-                // 计算重要性权重
-                float cosTheta = max(dot(lightDir, normalize(light.direction)), 0.0);
-                float weight = cosTheta / (pdf * light.samples);
+            bool isOccluded = intersectObjects(shadowRay, tempMat, tempNormal, t) && (t < lightDistance);
+            
+            if(!isOccluded) {
+                // 计算几何项：光源法线衰减
+                float cosTheta = max(dot(-lightDir, lightNormal), 0.0);
+                float geometry = cosTheta / (lightDistance * lightDistance);
+                
+                // 计算蒙特卡洛积分权重
+                float weight = geometry / (pdf * light.samples);
                 shadow += weight;
             }
             totalWeight += 1.0 / (pdf * light.samples);
         }
         
-        // 修复后（正确蒙特卡洛积分）
-        return shadow / float(light.samples);
+        // 归一化并应用光源强度
+        if(totalWeight > 0.0) {
+            // 移除光源强度相乘（强度应在光照计算阶段处理）
+            shadow = shadow / totalWeight;
+            return clamp(shadow * light.intensity, 0.0, 1.0); // 强度作用在此处
+        }
+        return 0.0;
     }
+    
     return 1.0;
 }
 
@@ -354,7 +383,7 @@ vec3 computeLighting(vec3 P, vec3 N, Material mat, vec3 V) {
         
             // 计算光源法线方向贡献
             vec3 lightNormal = normalize(light.direction);
-            float lightCos = max(dot(-lightDir, lightNormal), 0.0);
+            float lightCos = max(dot(lightDir, lightNormal), 0.0); // 移除负号
             attenuation *= lightCos;
         }
         

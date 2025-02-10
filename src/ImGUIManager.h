@@ -9,6 +9,14 @@
 
 class SSBO;
 
+struct GPUTimingData {
+    double raytracingTime = 0.0;
+    double bloomExtractTime = 0.0;
+    double bloomBlurTime = 0.0;
+    double taaTime = 0.0;
+    bool available = false;
+};
+
 class ImGuiManager {
 public:
     ImGuiManager(GLFWwindow* window);
@@ -22,6 +30,7 @@ public:
     void DrawCameraControls(Camera& camera);
     void DrawFPS();
 	void DrawTAASettings();
+    void DrawPerformanceStats(float cpuTime, const GPUTimingData& gpuData, const std::vector<float>& history);
 
 	// Skybox
     GLuint GetCurrentSkyboxTexture() const { return m_CurrentSkyboxTexture; }

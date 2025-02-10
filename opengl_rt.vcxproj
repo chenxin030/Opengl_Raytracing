@@ -150,6 +150,7 @@
     <ClInclude Include="src\SceneIO.h" />
     <ClInclude Include="src\Shader.h" />
     <ClInclude Include="src\SSBO.h" />
+    <ClInclude Include="src\TextureLoader.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
