@@ -1,11 +1,9 @@
-#include "Shader.h"
+
 #include "SSBO.h"
 #include "ImGUIManager.h"
-#include <GLFW/glfw3.h>
-#include "Camera.h"
-#include <imgui.h>
 #include "TextureLoader.h"
 #include "PerformanceProfiler.h"
+
 
 const int WIDTH = 800;
 const int HEIGHT = 800;
@@ -17,33 +15,6 @@ float lastY = HEIGHT / 2.0f;
 float deltaTime = 0.0f;
 float lastFrame = 0.0f;
 
-void RenderQuad() {
-    static GLuint quadVAO = 0, quadVBO;
-    if (quadVAO == 0) {
-        float quadVertices[] = {
-            // 位置       // 纹理坐标
-            -1.0f,  1.0f, 0.0f, 1.0f,
-            -1.0f, -1.0f, 0.0f, 0.0f,
-             1.0f, -1.0f, 1.0f, 0.0f,
-
-            -1.0f,  1.0f, 0.0f, 1.0f,
-             1.0f, -1.0f, 1.0f, 0.0f,
-             1.0f,  1.0f, 1.0f, 1.0f
-        };
-        glGenVertexArrays(1, &quadVAO);
-        glGenBuffers(1, &quadVBO);
-        glBindVertexArray(quadVAO);
-        glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), &quadVertices, GL_STATIC_DRAW);
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
-        glEnableVertexAttribArray(1);
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
-    }
-    glBindVertexArray(quadVAO);
-    glDrawArrays(GL_TRIANGLES, 0, 6);
-    glBindVertexArray(0);
-}
 void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
     if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
         if (firstMouse) {
@@ -71,24 +42,11 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
     }
 }
 void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
-    if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS){
+    if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
         camera.FOV -= (float)yoffset * camera.ZoomSpeed;
         if (camera.FOV < 1.0f) camera.FOV = 1.0f;
         if (camera.FOV > 90.0f) camera.FOV = 90.0f;
     }
-}
-
-// TAA： Halton序列生成函数（低差异序列）
-float haltonSequence(int index, int base) {
-	float result = 0.0f;
-	float f = 1.0f / base;
-	int i = index;
-	while (i > 0) {
-		result += f * (i % base);
-		i = (int)floor(i / base);
-		f /= base;
-	}
-	return result;
 }
 
 int main() {
@@ -103,18 +61,9 @@ int main() {
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     GLFWwindow* window = glfwCreateWindow(WIDTH, HEIGHT, "OpenGL Ray Tracing", nullptr, nullptr);
-    if (!window) {
-        std::cerr << "Failed to create GLFW window" << std::endl;
-        glfwTerminate();
-        return -1;
-    }
-
     glfwMakeContextCurrent(window);
     glewExperimental = GL_TRUE;
-    if (glewInit() != GLEW_OK) {
-        std::cerr << "Failed to initialize GLEW" << std::endl;
-        return -1;
-    }
+    glewInit();
 
     glfwSetCursorPosCallback(window, mouse_callback);
     glfwSetScrollCallback(window, scroll_callback);
@@ -152,16 +101,11 @@ int main() {
         glBindFramebuffer(GL_FRAMEBUFFER, bloomFBOs[i]);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, bloomTextures[i], 0);
     }
-
-    // 检查帧缓冲完整性
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-        std::cout << "Bloom Framebuffer not complete!" << std::endl;
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     // TAA： 添加历史缓冲区
     GLuint historyTex[2]; // 双缓冲
     GLuint taaFBO;
-
     glGenTextures(2, historyTex);
     for (int i = 0; i < 2; i++) {
         glBindTexture(GL_TEXTURE_2D, historyTex[i]);
@@ -171,7 +115,6 @@ int main() {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     }
-
     glGenFramebuffers(1, &taaFBO);
     glBindFramebuffer(GL_FRAMEBUFFER, taaFBO);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, historyTex[0], 0);
@@ -182,6 +125,26 @@ int main() {
     Shader bloomCombineShader("shader/outputVs.glsl", "shader/bloom_combineFs.glsl");
     Shader taaShader("shader/outputVs.glsl", "shader/taaFs.glsl");
 
+    // AO
+    AOManager* aoManager = nullptr;
+    GLuint gPositionTex, gNormalTex; // 几何缓冲区
+    aoManager = new AOManager(WIDTH, HEIGHT);
+    aoManager->Init();
+    imguiManager.aoManager = aoManager;
+
+
+    // 创建几何缓冲区
+    glGenTextures(1, &gPositionTex);
+    glBindTexture(GL_TEXTURE_2D, gPositionTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, WIDTH, HEIGHT, 0, GL_RGBA, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glGenTextures(1, &gNormalTex);
+    glBindTexture(GL_TEXTURE_2D, gNormalTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, WIDTH, HEIGHT, 0, GL_RGBA, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
     // GPU Time Query
     PerformanceProfiler gProfiler;
 
@@ -191,11 +154,8 @@ int main() {
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
 
-        // 获取实际帧缓冲尺寸（物理像素）
         int fbWidth, fbHeight;
         glfwGetFramebufferSize(window, &fbWidth, &fbHeight);
-
-        // 设置视口匹配实际尺寸（有这3行才能放满整个窗口）
         glViewport(0, 0, fbWidth, fbHeight);
 
         static int frameCount = 0;
@@ -210,6 +170,7 @@ int main() {
         imguiManager.LoadSave(ssbo, lightSSBO);
 		imguiManager.DrawTAASettings();
         imguiManager.ChooseSkybox();
+        aoManager->DrawUI();
         
         raytracingShader.use();
         raytracingShader.setInt("numObjects", ssbo.objects.size());
@@ -238,6 +199,11 @@ int main() {
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
         gProfiler.EndGPUSection(PerformanceProfiler::Stage::RayTracing);
+        
+        // AO
+        aoManager->Render(gPositionTex, gNormalTex,
+            camera.GetViewMatrix(),
+            camera.GetProjectionMatrix((float)WIDTH / HEIGHT));
 
         // ------------------------- Bloom处理 -------------------------
         // 步骤1: 亮度提取
@@ -310,10 +276,7 @@ int main() {
         }
         gProfiler.EndGPUSection(PerformanceProfiler::Stage::TAA);
 
-        // 结束帧
         gProfiler.EndFrame(deltaTime * 1000.0f);
-
-        // 绘制面板
         gProfiler.DrawImGuiPanel();
 
         imguiManager.EndFrame();
@@ -324,7 +287,6 @@ int main() {
     }
 
     glDeleteTextures(1, &outputTex);
-
     glfwTerminate();
     return 0;
 }

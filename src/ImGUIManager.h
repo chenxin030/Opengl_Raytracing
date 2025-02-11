@@ -6,6 +6,7 @@
 
 #include "Camera.h"
 #include "LightSSBO.h"
+#include "AO.h"
 
 class SSBO;
 
@@ -22,6 +23,7 @@ public:
     void DrawCameraControls(Camera& camera);
     void DrawFPS();
 	void DrawTAASettings();
+    void DrawAOSettings();
 
 	// Skybox
     GLuint GetCurrentSkyboxTexture() const { return m_CurrentSkyboxTexture; }
@@ -43,6 +45,9 @@ public:
     // TAA
 	bool IsTAAEnabled() const { return m_EnableTAA; }
 	float GetTAABlendFactor() const { return m_TAABlendFactor; }
+
+    // AO
+    AOManager* aoManager;
 
 	void HandleCameraMovement(Camera& camera, float deltaTime);
     

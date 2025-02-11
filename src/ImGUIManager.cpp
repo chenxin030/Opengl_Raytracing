@@ -6,6 +6,7 @@
 #include "imgui_impl_opengl3.h"
 #include "TextureLoader.h"
 #include "SceneIO.h"
+#include "AO.h"
 
 namespace fs = std::filesystem;
 
@@ -374,6 +375,14 @@ void ImGuiManager::DrawTAASettings()
         ImGui::SliderFloat("Blend Factor", &m_TAABlendFactor, 0.01f, 0.5f);
     }
 
+    ImGui::End();
+}
+
+void ImGuiManager::DrawAOSettings()
+{
+    ImGui::Begin("AO Settings");
+    ImGui::Checkbox("Enable AO", &(aoManager->enableAO));
+    ImGui::SliderFloat("AO Strength", &(aoManager->aoStrength), 0.0f, 2.0f);
     ImGui::End();
 }
 

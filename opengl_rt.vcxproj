@@ -132,6 +132,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\AO.cpp" />
+    <ClCompile Include="src\global.cpp" />
     <ClCompile Include="src\ImGUIManager.cpp" />
     <ClCompile Include="src\imgui_impl_glfw.cpp" />
     <ClCompile Include="src\imgui_impl_opengl3.cpp" />
@@ -142,6 +143,7 @@
   <ItemGroup>
     <ClInclude Include="src\AO.h" />
     <ClInclude Include="src\Camera.h" />
+    <ClInclude Include="src\global.h" />
     <ClInclude Include="src\ImGUIManager.h" />
     <ClInclude Include="src\imgui_impl_glfw.h" />
     <ClInclude Include="src\imgui_impl_opengl3.h" />

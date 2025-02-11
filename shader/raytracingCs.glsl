@@ -42,6 +42,8 @@ struct Light {
 
 layout(local_size_x = 16, local_size_y = 16) in;
 layout(rgba32f, binding = 0) uniform image2D outputImage;
+layout(rgba32f, binding = 1) uniform image2D gPosition;
+layout(rgba16f, binding = 2) uniform image2D gNormal;
 
 layout(std430, binding = 0) buffer Objects {
     Object objects[];
@@ -414,9 +416,12 @@ void main() {
     vec3 finalColor = vec3(0.0);
     vec3 throughput = vec3(1.0);
     
+    vec3 P;
+    vec3 V;
+    vec3 N;
+
     for(int depth = 0; depth < MAX_RAY_DEPTH; ++depth) {
         Material mat;
-        vec3 N;
         float t;
         
         if(!intersectObjects(ray, mat, N, t)) {
@@ -425,8 +430,8 @@ void main() {
             break;
         }
         
-        vec3 P = ray.origin + ray.direction * t;
-        vec3 V = normalize(-ray.direction);
+        P = ray.origin + ray.direction * t;
+        V = normalize(-ray.direction);
         
         // 计算表面光照
         vec3 Lo = computeLighting(P, N, mat, V);
@@ -457,4 +462,6 @@ void main() {
     }
     
     imageStore(outputImage, pixelCoords, vec4(finalColor, 1.0));
+    imageStore(gPosition, pixelCoords, vec4(P, 1.0));
+    imageStore(gNormal, pixelCoords, vec4(N, 1.0));
 }

@@ -1,11 +1,11 @@
 // AO.cpp
 #include "AO.h"
 #include <random>
+#include <iostream>
 #include <imgui.h>
 
 AOManager::AOManager(int width, int height)
     : screenWidth(width), screenHeight(height) {
-    Init();
 }
 
 AOManager::~AOManager() {
@@ -13,15 +13,14 @@ AOManager::~AOManager() {
     glDeleteTextures(1, &ssaoBlurBuffer);
     glDeleteFramebuffers(1, &ssaoFBO);
     glDeleteFramebuffers(1, &ssaoBlurFBO);
+    glDeleteTextures(1, &noiseTexture);
 }
 
 void AOManager::Init() {
     InitSSAO();
-    InitRayTraced();
 }
 
 void AOManager::InitSSAO() {
-    // 生成采样核
     std::uniform_real_distribution<float> randomFloats(0.0, 1.0);
     std::default_random_engine generator;
     for (unsigned int i = 0; i < 64; ++i) {
@@ -38,7 +37,6 @@ void AOManager::InitSSAO() {
         ssaoKernel.push_back(sample);
     }
 
-    // 生成噪声纹理
     std::vector<glm::vec3> ssaoNoise;
     for (unsigned int i = 0; i < 16; i++) {
         glm::vec3 noise(
@@ -53,25 +51,31 @@ void AOManager::InitSSAO() {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, 4, 4, 0, GL_RGB, GL_FLOAT, &ssaoNoise[0]);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
-    // 创建FBO和纹理
     glGenFramebuffers(1, &ssaoFBO);
     glGenFramebuffers(1, &ssaoBlurFBO);
 
-    // ...类似Bloom的FBO初始化代码
+    glGenTextures(1, &ssaoColorBuffer);
+    glBindTexture(GL_TEXTURE_2D, ssaoColorBuffer);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, screenWidth, screenHeight, 0, GL_RGB, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-}
+    glGenTextures(1, &ssaoBlurBuffer);
+    glBindTexture(GL_TEXTURE_2D, ssaoBlurBuffer);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, screenWidth, screenHeight, 0, GL_RGB, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-void AOManager::InitRayTraced() {
-    rtAOShader = Shader("shader/raytracingCsAO.glsl");
+    ssaoShader = Shader("shader/outputVs.glsl", "shader/ssaoFs.glsl");
+    ssaoBlurShader = Shader("shader/outputVs.glsl", "shader/ssao_blurFs.glsl");
 }
 
 void AOManager::Render(GLuint positionTex, GLuint normalTex, const glm::mat4& view, const glm::mat4& projection) {
-    if (currentType == SSAO) {
+    if (enableAO) {
         RenderSSAO(positionTex, normalTex, view, projection);
-    }
-    else {
-        RenderRayTraced();
     }
 }
 
@@ -80,48 +84,46 @@ void AOManager::RenderSSAO(GLuint positionTex, GLuint normalTex, const glm::mat4
     glClear(GL_COLOR_BUFFER_BIT);
 
     ssaoShader.use();
-    ssaoShader.setMat4("view", view);
+    for (unsigned int i = 0; i < 64; ++i)
+        ssaoShader.setVec3("samples[" + std::to_string(i) + "]", ssaoKernel[i]);
     ssaoShader.setMat4("projection", projection);
+    ssaoShader.setMat4("view", view);
     ssaoShader.setInt("gPosition", 0);
     ssaoShader.setInt("gNormal", 1);
     ssaoShader.setInt("texNoise", 2);
 
-    // 绑定纹理...
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, positionTex);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, normalTex);
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, noiseTexture);
+
     RenderQuad();
 
-    // 模糊处理...
-}
-
-void AOManager::RenderRayTraced() {
-    rtAOShader.use();
-    rtAOShader.setInt("numObjects", /*传递物体数量*/);
-    rtAOShader.setFloat("aoRadius", rtRadius);
-    rtAOShader.setInt("aoSamples", rtSamples);
-
-    glDispatchCompute(/*...*/);
-    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+    glBindFramebuffer(GL_FRAMEBUFFER, ssaoBlurFBO);
+    glClear(GL_COLOR_BUFFER_BIT);
+    ssaoBlurShader.use();
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, ssaoColorBuffer);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 void AOManager::DrawUI() {
     ImGui::Begin("AO Settings", &showSettings);
-
-    // 类型选择
-    const char* aoTypes[] = { "SSAO", "Ray Traced AO" };
-    ImGui::Combo("AO Type", (int*)&currentType, aoTypes, IM_ARRAYSIZE(aoTypes));
-
-    // 通用参数
+    ImGui::Checkbox("Enable AO", &enableAO);
     ImGui::SliderFloat("AO Strength", &aoStrength, 0.0f, 2.0f);
-
-    // 类型特定参数
-    if (currentType == SSAO) {
-        ImGui::Text("SSAO Parameters");
-        // 添加SSAO参数...
-    }
-    else {
-        ImGui::Text("Ray Traced AO Parameters");
-        ImGui::SliderInt("Samples", &rtSamples, 1, 64);
-        ImGui::SliderFloat("Radius", &rtRadius, 0.1f, 2.0f);
-    }
-
     ImGui::End();
+}
+
+void AOManager::Resize(int width, int height) {
+    screenWidth = width;
+    screenHeight = height;
+
+    glBindTexture(GL_TEXTURE_2D, ssaoColorBuffer);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, width, height, 0, GL_RGB, GL_FLOAT, NULL);
+
+    glBindTexture(GL_TEXTURE_2D, ssaoBlurBuffer);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RED, width, height, 0, GL_RGB, GL_FLOAT, NULL);
 }

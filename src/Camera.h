@@ -1,6 +1,8 @@
 // Camera.h
 #pragma once
 #include <glm/glm.hpp>
+#include <glm/ext/matrix_transform.hpp>
+#include <glm/ext/matrix_clip_space.hpp>
 
 class Camera {
 public:
@@ -28,5 +30,13 @@ public:
         Front = glm::normalize(front);
         Right = glm::normalize(glm::cross(Front, glm::vec3(0.0f, 1.0f, 0.0f)));
         Up = glm::normalize(glm::cross(Right, Front));
+    }
+
+    glm::mat4 GetViewMatrix() const {
+        return glm::lookAt(Position, Position + Front, Up);
+    }
+
+    glm::mat4 GetProjectionMatrix(float aspectRatio) const {
+        return glm::perspective(glm::radians(FOV), aspectRatio, 0.1f, 100.0f);
     }
 };
