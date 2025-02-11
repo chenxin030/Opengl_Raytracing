@@ -377,42 +377,6 @@ void ImGuiManager::DrawTAASettings()
     ImGui::End();
 }
 
-void ImGuiManager::DrawPerformanceStats(float cpuTime, const GPUTimingData& gpuData, const std::vector<float>& history)
-{
-    ImGui::Begin("Performance Analysis", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-
-    // CPU时间
-    ImGui::TextColored(ImVec4(1, 0.5, 0, 1), "Frame Time");
-    ImGui::Text("CPU: %.2f ms", cpuTime);
-
-    // GPU时间
-    if (gpuData.available) {
-        ImGui::Separator();
-        ImGui::TextColored(ImVec4(0, 1, 1, 1), "GPU Breakdown:");
-        ImGui::Text("Ray Tracing:  %6.2f ms", gpuData.raytracingTime);
-        ImGui::Text("Bloom Extract:%6.2f ms", gpuData.bloomExtractTime);
-        ImGui::Text("Bloom Blur:   %6.2f ms", gpuData.bloomBlurTime);
-        ImGui::Text("TAA:          %6.2f ms", gpuData.taaTime);
-        ImGui::Text("Total GPU:    %6.2f ms",
-            gpuData.raytracingTime +
-            gpuData.bloomExtractTime +
-            gpuData.bloomBlurTime +
-            gpuData.taaTime);
-    }
-
-    // 历史图表
-    ImGui::Separator();
-    if (!history.empty()) {
-        float max_val = *std::max_element(history.begin(), history.end());
-        ImGui::PlotLines("##RT_History", history.data(), history.size(),
-            0, "Ray Tracing Time (ms)",
-            0.0f, max_val * 1.2f,
-            ImVec2(300, 80));
-    }
-
-    ImGui::End();
-}
-
 void ImGuiManager::LoadSave(SSBO& ssbo, LightSSBO& lightSSBO) {
     ImGui::SetNextWindowPos(ImVec2(10, 130), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowCollapsed(true, ImGuiCond_FirstUseEver);

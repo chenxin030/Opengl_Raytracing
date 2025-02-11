@@ -12,6 +12,8 @@ public:
     // 程序ID
     GLuint ID;
 
+	Shader() {}
+
     // 构造函数读取并构建着色器
     Shader(const char* vertexPath, const char* fragmentPath) {
         // 1. 从文件路径中获取顶点/片段着色器

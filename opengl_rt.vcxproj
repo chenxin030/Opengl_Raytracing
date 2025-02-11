@@ -131,13 +131,16 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="src\AO.cpp" />
     <ClCompile Include="src\ImGUIManager.cpp" />
     <ClCompile Include="src\imgui_impl_glfw.cpp" />
     <ClCompile Include="src\imgui_impl_opengl3.cpp" />
     <ClCompile Include="src\main.cpp" />
+    <ClCompile Include="src\PerformanceProfiler.cpp" />
     <ClCompile Include="src\TextureLoader.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\AO.h" />
     <ClInclude Include="src\Camera.h" />
     <ClInclude Include="src\ImGUIManager.h" />
     <ClInclude Include="src\imgui_impl_glfw.h" />
@@ -147,6 +150,7 @@
     <ClInclude Include="src\LightSSBO.h" />
     <ClInclude Include="src\Material.h" />
     <ClInclude Include="src\Object.h" />
+    <ClInclude Include="src\PerformanceProfiler.h" />
     <ClInclude Include="src\SceneIO.h" />
     <ClInclude Include="src\Shader.h" />
     <ClInclude Include="src\SSBO.h" />
