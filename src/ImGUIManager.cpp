@@ -238,6 +238,25 @@ void ImGuiManager::DrawLightController(LightSSBO& lightSSBO) {
 		ImGui::InputInt("Samples", &uiLight.light.samples);
     }
 
+    // 在光源属性面板中添加
+    ImGui::Separator();
+    ImGui::Text("Shadow Settings");
+    ImGui::Combo("Shadow Type", &uiLight.light.shadowType, "None\0PCF\0PCSS\0");
+
+    if (uiLight.light.shadowType != 0) {
+        ImGui::SliderInt("PCF Samples", &uiLight.light.pcfSamples, 1, 16);
+        ImGui::SliderFloat("Softness", &uiLight.light.shadowSoftness, 0.0f, 2.0f);
+    }
+
+    if (uiLight.light.shadowType == 2) { // PCSS
+        if (lightType == 0 || lightType == 1) { // 点光源或定向光
+            ImGui::SliderFloat("Light Size", &uiLight.light.lightSize, 0.1f, 5.0f);
+        }
+        if (lightType == 1) { // 定向光
+            ImGui::SliderAngle("Angular Radius", &uiLight.light.angularRadius, 0.1f, 5.0f);
+        }
+    }
+
     // 添加光源按钮
     if (ImGui::Button("Add Light")) {
         lightSSBO.lights.push_back(uiLight.light);
@@ -277,6 +296,25 @@ void ImGuiManager::DrawLightController(LightSSBO& lightSSBO) {
 				ImGui::InputFloat3("Direction", &uiLight.light.direction.x);
 				ImGui::InputInt("Samples", &uiLight.light.samples);
 			}
+
+            // 在光源属性面板中添加
+            ImGui::Separator();
+            ImGui::Text("Shadow Settings");
+            ImGui::Combo("Shadow Type", &uiLight.light.shadowType, "None\0PCF\0PCSS\0");
+
+            if (uiLight.light.shadowType != 0) {
+                ImGui::SliderInt("PCF Samples", &uiLight.light.pcfSamples, 1, 16);
+                ImGui::SliderFloat("Softness", &uiLight.light.shadowSoftness, 0.0f, 2.0f);
+            }
+
+            if (uiLight.light.shadowType == 2) { // PCSS
+                if (lightType == 0 || lightType == 1) { // 点光源或定向光
+                    ImGui::SliderFloat("Light Size", &uiLight.light.lightSize, 0.1f, 5.0f);
+                }
+                if (lightType == 1) { // 定向光
+                    ImGui::SliderAngle("Angular Radius", &uiLight.light.angularRadius, 0.1f, 5.0f);
+                }
+            }
 
             // 删除按钮
             if (ImGui::SmallButton("Delete")) {

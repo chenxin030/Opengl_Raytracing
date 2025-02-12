@@ -12,6 +12,11 @@ struct Light {
     alignas(4)   float intensity = 1.0f;                            // 光照强度
     alignas(4)   float radius = 0.5f;                               // 点光源影响半径（可选）
     alignas(4)   int samples = 4;                                   // 面光源采样次数（可选）
+    alignas(4)   float shadowSoftness = 1;                          // 阴影柔化强度
+    alignas(4)   int shadowType = 1;                                // 0=无 1=PCF 2=PCSS
+    alignas(4)   int pcfSamples = 4;                                // PCF采样数
+    alignas(4)   float lightSize = 1;                               // PCSS光源尺寸
+    alignas(4)   float angularRadius;                               // 定向光的角度半径（弧度制）
 };
 
 

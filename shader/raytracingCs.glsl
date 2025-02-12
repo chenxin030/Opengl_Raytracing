@@ -38,6 +38,12 @@ struct Light {
     float intensity;    
     float radius;       // 区域光源半径
     int samples;        // 采样数（建议4-16）
+
+    float shadowSoftness;                                           // 阴影柔化强度
+    int shadowType;                                                 // 0=无 1=PCF 2=PCSS
+    int pcfSamples;                                                 // PCF采样数
+    float lightSize;                                                // PCSS光源尺寸
+    float angularRadius;
 };
 
 layout(local_size_x = 16, local_size_y = 16) in;
@@ -266,95 +272,127 @@ vec3 sampleAreaLight(Light light, vec3 point, vec2 rand, out float pdf) {
     return samplePos;
 }
 
-float calculateShadow(vec3 point, vec3 normal, Light light) {
-    float shadow = 0.0;
-    float totalWeight = 0.0;
 
-    if(light.type == 0) { // 点光源
-        vec3 lightDir = light.position - point;
-        float lightDistance = length(lightDir);
-        lightDir = normalize(lightDir);
-        
+// 通用PCF实现
+float pcfShadow(vec3 point, vec3 normal, Light light, vec3 lightDir, float lightDistance) {
+    float shadow = 0.0;
+    float filterSize = light.shadowSoftness * 0.005;
+    vec3 tangent, bitangent;
+
+    // 构建切线空间
+    if(light.type == 1) { // 定向光
+        tangent = normalize(cross(lightDir, vec3(0,1,0)));
+        bitangent = cross(lightDir, tangent);
+        filterSize = light.angularRadius * lightDistance;
+    } else { // 点光源/区域光
+        tangent = normalize(cross(lightDir, vec3(0,1,0)));
+        bitangent = cross(lightDir, tangent);
+    }
+
+    for(int i = 0; i < light.pcfSamples; i++) {
+        vec2 rand = vec2(haltonSequence(i, 2) * 2.0 - 1.0);
+        vec3 jitteredDir;
+
+        if(light.type == 1) { // 定向光
+            jitteredDir = lightDir + 
+                rand.x * tangent * filterSize +
+                rand.y * bitangent * filterSize;
+        } else { // 点光源/区域光
+            jitteredDir = normalize(lightDir + 
+                rand.x * tangent * filterSize +
+                rand.y * bitangent * filterSize);
+        }
+
         Ray shadowRay;
         shadowRay.origin = point + normal * 0.001;
-        shadowRay.direction = lightDir;
+        shadowRay.direction = jitteredDir;
         shadowRay.depth = 0;
-        
+
         Material tempMat;
         vec3 tempNormal;
         float t;
-        if(intersectObjects(shadowRay, tempMat, tempNormal, t) && t < lightDistance) {
-            return 0.0; // 完全遮挡
+        bool isOccluded = intersectObjects(shadowRay, tempMat, tempNormal, t);
+
+        if(light.type == 0 || light.type == 2) { // 点/区域光源需要距离判断
+            isOccluded = isOccluded && (t < lightDistance);
         }
-        return 1.0;
+
+        shadow += isOccluded ? 0.0 : 1.0;
     }
-    else if(light.type == 1) { // 定向光
-        vec3 lightDir = normalize(-light.direction);
-        
+    return shadow / light.pcfSamples;
+}
+
+// 通用PCSS实现
+float pcssShadow(vec3 point, vec3 normal, Light light, vec3 lightDir, float lightDistance) {
+    // 步骤1：遮挡物深度估计
+    float avgBlockerDepth = 0.0;
+    int blockerCount = 0;
+    float searchSize = light.lightSize * 0.1;
+
+    for(int i = 0; i < 16; i++) {
+        vec2 rand = vec2(haltonSequence(i, 3) * 2.0 - 1.0);
+        vec3 sampleDir = lightDir + rand.x * searchSize + rand.y * searchSize;
+
         Ray shadowRay;
         shadowRay.origin = point + normal * 0.001;
-        shadowRay.direction = lightDir;
+        shadowRay.direction = normalize(sampleDir);
         shadowRay.depth = 0;
-        
+
         Material tempMat;
         vec3 tempNormal;
         float t;
-        if(intersectObjects(shadowRay, tempMat, tempNormal, t)) {
-            return 0.0; // 完全遮挡
+        bool isOccluded = intersectObjects(shadowRay, tempMat, tempNormal, t);
+
+        if(light.type != 1) { // 非定向光需要距离判断
+            isOccluded = isOccluded && (t < lightDistance);
         }
-        return 1.0;
+
+        if(isOccluded) {
+            avgBlockerDepth += t;
+            blockerCount++;
+        }
     }
-    else if(light.type == 2) { // 区域光（物理正确采样）
-        vec3 lightNormal = normalize(-light.direction); // 添加负号
-        float lightRadius = light.radius;
-        float lightArea = PI * lightRadius * lightRadius;
-        
-        for(int i = 0; i < light.samples; i++) {
-            // 使用Halton序列生成低差异随机数
-            vec2 rand = vec2(
-                haltonSequence(i, 2),
-                haltonSequence(i, 3)
-            );
-            
-            float pdf;
-            vec3 samplePos = sampleAreaLight(light, point, rand, pdf);
-            vec3 lightDir = samplePos - point;
-            float lightDistance = length(lightDir);
-            lightDir = normalize(lightDir);
-            
-            // 可见性测试
-            Ray shadowRay;
-            shadowRay.origin = point + normal * 0.001;
-            shadowRay.direction = lightDir;
-            shadowRay.depth = 0;
-            
-            Material tempMat;
-            vec3 tempNormal;
-            float t;
-            bool isOccluded = intersectObjects(shadowRay, tempMat, tempNormal, t) && (t < lightDistance);
-            
-            if(!isOccluded) {
-                // 计算几何项：光源法线衰减
-                float cosTheta = max(dot(-lightDir, lightNormal), 0.0);
-                float geometry = cosTheta / (lightDistance * lightDistance);
-                
-                // 计算蒙特卡洛积分权重
-                float weight = geometry / (pdf * light.samples);
-                shadow += weight;
-            }
-            totalWeight += 1.0 / (pdf * light.samples);
-        }
-        
-        // 归一化并应用光源强度
-        if(totalWeight > 0.0) {
-            // 移除光源强度相乘（强度应在光照计算阶段处理）
-            shadow = shadow / totalWeight;
-            return clamp(shadow * light.intensity, 0.0, 1.0); // 强度作用在此处
-        }
-        return 0.0;
-    }
+
+    if(blockerCount == 0) return 1.0;
+    avgBlockerDepth /= blockerCount;
+
+    // 步骤2：计算半影尺寸
+    float penumbraSize = (avgBlockerDepth - lightDistance) * light.lightSize;
+    penumbraSize *= light.shadowSoftness;
+
+    // 步骤3：动态PCF
+    return pcfShadow(point, normal, light, lightDir, lightDistance);
+}
+
+// 统一阴影计算函数
+float calculateShadow(vec3 point, vec3 normal, Light light) {
+    if(light.shadowType == 0) return 1.0;
     
-    return 1.0;
+    float shadow = 0.0;
+    vec3 lightDir;
+    float lightDistance;
+
+    // 计算基础光照参数
+    if(light.type == 0) { // 点光源
+        lightDir = light.position - point;
+        lightDistance = length(lightDir);
+        lightDir = normalize(lightDir);
+    } else if(light.type == 1) { // 定向光
+        lightDir = normalize(-light.direction);
+        lightDistance = 1e6;
+    } else { // 区域光
+        lightDir = normalize(light.position - point);
+        lightDistance = length(light.position - point);
+    }
+
+    // 阴影类型处理
+    if(light.shadowType == 1) { // PCF
+        shadow = pcfShadow(point, normal, light, lightDir, lightDistance);
+    } else if(light.shadowType == 2) { // PCSS
+        shadow = pcssShadow(point, normal, light, lightDir, lightDistance);
+    }
+
+    return shadow;
 }
 
 vec3 computeLighting(vec3 P, vec3 N, Material mat, vec3 V) {
