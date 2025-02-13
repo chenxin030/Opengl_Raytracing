@@ -1,7 +1,7 @@
 #version 430 core
 
 // 新增最大递归深度限制
-#define MAX_RAY_DEPTH 3 
+#define MAX_RAY_DEPTH 1 
 const float PI = 3.14159265359;
 
 struct Ray {
@@ -24,10 +24,10 @@ struct Material {
 struct Object {
     int type;        // 0=球体, 1=平面
     vec3 position;
-    Material material;
     float radius;   // 球体
     vec3 normal;    // 平面
     vec2 size;      // 平面
+    Material material;
 };
 
 struct Light {
@@ -46,7 +46,7 @@ struct Light {
     float angularRadius;
 };
 
-layout(local_size_x = 16, local_size_y = 16) in;
+layout(local_size_x = 32, local_size_y = 32) in;
 layout(rgba32f, binding = 0) uniform image2D outputImage;
 layout(rgba32f, binding = 1) uniform image2D gPosition;
 layout(rgba16f, binding = 2) uniform image2D gNormal;
@@ -71,7 +71,7 @@ uniform float focalLength = 1.0;   // 焦距
 uniform samplerCube skybox;
 uniform bool useSkybox;
 
-uniform float maxRayDistance = 100.0; // 最大射线距离限制
+uniform float maxRayDistance = 114514.0; // 最大射线距离限制
 
 bool intersectSphere(Ray ray, Object obj, out float t) {
     vec3 oc = ray.origin - obj.position;
@@ -91,27 +91,33 @@ bool intersectSphere(Ray ray, Object obj, out float t) {
 bool intersectPlane(Ray ray, Object obj, out float t) {
     float denom = dot(obj.normal, ray.direction);
     if (abs(denom) > 1e-6) {
-        // 计算交点
         t = dot(obj.position - ray.origin, obj.normal) / denom;
-        if(t < 0.0) return false;
-        
+        if (t < 0.0) return false;
+
         vec3 hitPoint = ray.origin + ray.direction * t;
         
-        // 构建安全的局部坐标系
-        vec3 forward = normalize(cross(obj.normal, vec3(0,0,1)));
-        if(length(forward) < 0.1) forward = normalize(cross(obj.normal, vec3(0,1,0)));
-        vec3 right = normalize(cross(forward, obj.normal));
-        
-        // 计算局部坐标
+        // 修正坐标系构建逻辑
+        vec3 right, forward;
+        if (abs(obj.normal.y) > 0.9) { 
+            // 法线接近Y轴（如地面/天花板）
+            right = normalize(cross(obj.normal, vec3(0,0,1)));
+            forward = normalize(cross(right, obj.normal));
+        } else { 
+            // 法线接近X/Z轴（如墙面）
+            right = normalize(cross(obj.normal, vec3(0,1,0)));
+            forward = normalize(cross(right, obj.normal));
+        }
+
+        // 计算局部偏移
         vec3 localOffset = hitPoint - obj.position;
         float x = dot(localOffset, right);
-        float y = dot(localOffset, forward);
-        
-        // 检查尺寸范围（使用obj.size的x和y分别对应宽高）
-        if(abs(x) > obj.size.x/2.0 || abs(y) > obj.size.y/2.0) {
+        float z = dot(localOffset, forward);
+
+        // 检查尺寸范围（size.x=宽度，size.y=高度）
+        if (abs(x) > obj.size.x/2.0 || abs(z) > obj.size.y/2.0) {
             return false;
         }
-        
+
         return true;
     }
     return false;
