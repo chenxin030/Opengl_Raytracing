@@ -4,6 +4,11 @@
 #define MAX_RAY_DEPTH 1 
 const float PI = 3.14159265359;
 
+struct AABB {
+    vec3 min;
+    vec3 max;
+};
+
 struct Ray {
     vec3 origin;
     vec3 direction;
@@ -28,6 +33,7 @@ struct Object {
     vec3 normal;    // 平面
     vec2 size;      // 平面
     Material material;
+    AABB bounds;
 };
 
 struct Light {
@@ -72,6 +78,20 @@ uniform samplerCube skybox;
 uniform bool useSkybox;
 
 uniform float maxRayDistance = 114514.0; // 最大射线距离限制
+
+bool intersectAABB(Ray ray, AABB aabb, out float tMin, out float tMax) {
+    vec3 invDir = 1.0 / ray.direction;
+    vec3 t0 = (aabb.min - ray.origin) * invDir;
+    vec3 t1 = (aabb.max - ray.origin) * invDir;
+    
+    vec3 tSmaller = min(t0, t1);
+    vec3 tLarger = max(t0, t1);
+    
+    tMin = max(max(tSmaller.x, tSmaller.y), tSmaller.z);
+    tMax = min(min(tLarger.x, tLarger.y), tLarger.z);
+    
+    return tMax >= tMin && tMin < maxRayDistance && tMax > 0.0;
+}
 
 bool intersectSphere(Ray ray, Object obj, out float t) {
     vec3 oc = ray.origin - obj.position;
@@ -129,9 +149,14 @@ bool intersectObjects(Ray ray, out Material hitMaterial, out vec3 hitNormal, out
     
     for(int i = 0; i < numObjects; i++) {
         Object obj = objects[i];
+        // 先检测AABB
+        float boxTMin, boxTMax;
+        if(!intersectAABB(ray, obj.bounds, boxTMin, boxTMax)) continue;
+        
+        // 再检测具体形状
         float currentT;
         bool isHit = false;
-        
+
         // 球体相交检测
         if(obj.type == 0) {
             isHit = intersectSphere(ray, obj, currentT);

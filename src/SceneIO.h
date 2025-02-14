@@ -72,6 +72,38 @@ static void WriteLightParams(std::ofstream& file, const Light& light, const std:
 		<< " " << light.samples;
 }
 
+// SceneIO.cpp（或对应场景加载代码）
+void GenerateAABBForObject(Object& obj) {
+    if (obj.type == ObjectType::SPHERE) {
+        // 球体AABB：中心±半径
+        obj.bounds.min = obj.position - glm::vec3(obj.radius);
+        obj.bounds.max = obj.position + glm::vec3(obj.radius);
+    }
+    else if (obj.type == ObjectType::PLANE) {
+        // 平面AABB：根据法线方向生成
+        glm::vec3 right, forward;
+
+        if (abs(obj.normal.y) > 0.9) { // Y轴法线（地面/天花板）
+            right = glm::vec3(1, 0, 0);
+            forward = glm::vec3(0, 0, 1);
+        }
+        else { // X/Z轴法线（墙面）
+            right = glm::normalize(glm::cross(obj.normal, glm::vec3(0, 1, 0)));
+            forward = glm::normalize(glm::cross(right, obj.normal));
+        }
+
+        glm::vec3 halfSizeX = right * (obj.size.x / 2.0f);
+        glm::vec3 halfSizeY = forward * (obj.size.y / 2.0f);
+
+        obj.bounds.min = obj.position - halfSizeX - halfSizeY;
+        obj.bounds.max = obj.position + halfSizeX + halfSizeY;
+
+        // 沿法线方向扩展1cm避免平面厚度为0
+        obj.bounds.min += obj.normal * 0.01f;
+        obj.bounds.max += obj.normal * 0.01f;
+    }
+}
+
 class SceneIO {
 public:
     static bool Load(const std::string& path, std::vector<UIObject>& uiObjs, std::vector<UILight>& uiLights) {
@@ -132,6 +164,9 @@ private:
 			>> uiObj.obj.material.transparency
 			>> uiObj.obj.material.specular;
         snprintf(uiObj.name, sizeof(uiObj.name), "%s", name.c_str());
+
+        GenerateAABBForObject(uiObj.obj); // 新增
+
         uiObjects.push_back(uiObj);
     }
 

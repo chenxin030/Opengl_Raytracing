@@ -5,6 +5,11 @@
 
 enum class ObjectType { SPHERE, PLANE };
 
+struct AABB {
+    alignas(16) glm::vec3 min;
+    alignas(16) glm::vec3 max;
+};
+
 struct Object {
     alignas(4) ObjectType type;         // 4字节对齐，占4字节
     alignas(16) glm::vec3 position;     // 16字节对齐，占12字节
@@ -12,6 +17,7 @@ struct Object {
     alignas(16) glm::vec3 normal = glm::vec3(0.0f, 1.0f, 0.0f);       // 16字节对齐，占12字节
     alignas(16) glm::vec2 size = glm::vec2(1.0f, 1.0f);       // 新增：平面尺寸（width, height）
     alignas(16) Material material;      // 16字节对齐，占48字节
+    alignas(16) AABB bounds; // 新增AABB
 };
 
 
