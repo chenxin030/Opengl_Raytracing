@@ -10,17 +10,19 @@
 
 namespace fs = std::filesystem;
 
-ImGuiManager::ImGuiManager(GLFWwindow* window) : m_Window(window) {
+ImGuiManager::ImGuiManager(GLFWwindow* window) : m_Window(window) {}
+
+void ImGuiManager::Init() {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
-	// 禁用状态保存，否则下次运行会是上次运行结束时的状态
+    // 禁用状态保存，否则下次运行会是上次运行结束时的状态
     io.IniFilename = nullptr;
 
     SetupStyle();
-    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplGlfw_InitForOpenGL(m_Window, true);
     ImGui_ImplOpenGL3_Init("#version 430");
 
     // 加载默认天空盒

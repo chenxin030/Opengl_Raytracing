@@ -7,12 +7,17 @@
 #include "Camera.h"
 #include "LightSSBO.h"
 #include "AO.h"
+#include "Object.h"
 
 class SSBO;
 
 class ImGuiManager {
 public:
+    GLFWwindow* m_Window;
+
+    ImGuiManager() = default;
     ImGuiManager(GLFWwindow* window);
+    void Init();
     ~ImGuiManager();
 
     void BeginFrame();
@@ -55,7 +60,6 @@ public:
     std::vector<UILight> m_UILights;
 private:
 
-    GLFWwindow* m_Window;
 
     // skybox
     bool m_UseSkybox = true;

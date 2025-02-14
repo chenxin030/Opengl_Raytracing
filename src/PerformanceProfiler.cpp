@@ -6,11 +6,14 @@
 PerformanceProfiler::PerformanceProfiler(size_t historySize)
     : m_frameHistory(historySize),
     m_gpuTimeHistory(historySize, 0.0f) {
-    glGenQueries(QUERY_FRAME_COUNT * STAGES_PER_FRAME, &m_queryPool[0][0]);
 }
 
 PerformanceProfiler::~PerformanceProfiler() {
     glDeleteQueries(QUERY_FRAME_COUNT * STAGES_PER_FRAME, &m_queryPool[0][0]);
+}
+
+void PerformanceProfiler::Init(){
+    glGenQueries(QUERY_FRAME_COUNT * STAGES_PER_FRAME, &m_queryPool[0][0]);
 }
 
 void PerformanceProfiler::BeginFrame() {

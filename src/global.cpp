@@ -1,6 +1,15 @@
 #include "global.h"
 #include <glm/common.hpp>
 
+const int WIDTH = 800;
+const int HEIGHT = 800;
+Camera camera;
+bool firstMouse = true;
+float lastX = WIDTH / 2.0f;
+float lastY = HEIGHT / 2.0f;
+float deltaTime = 0.0f;
+float lastFrame = 0.0f;
+
 void RenderQuad() {
     static GLuint quadVAO = 0, quadVBO;
     if (quadVAO == 0) {
@@ -39,4 +48,39 @@ float haltonSequence(int index, int base) {
         f /= base;
     }
     return result;
+}
+
+void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
+    if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
+        if (firstMouse) {
+            lastX = xpos;
+            lastY = ypos;
+            firstMouse = false;
+        }
+
+        float xoffset = (xpos - lastX) * camera.Sensitivity;
+        float yoffset = (lastY - ypos) * camera.Sensitivity;
+        lastX = xpos;
+        lastY = ypos;
+
+        camera.Yaw += xoffset;
+        camera.Pitch += yoffset;
+
+        // ÏÞÖÆ¸©Ñö½Ç
+        if (camera.Pitch > 89.0f) camera.Pitch = 89.0f;
+        if (camera.Pitch < -89.0f) camera.Pitch = -89.0f;
+
+        camera.UpdateVectors();
+    }
+    else {
+        firstMouse = true;
+    }
+}
+
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
+    if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
+        camera.FOV -= (float)yoffset * camera.ZoomSpeed;
+        if (camera.FOV < 1.0f) camera.FOV = 1.0f;
+        if (camera.FOV > 90.0f) camera.FOV = 90.0f;
+    }
 }

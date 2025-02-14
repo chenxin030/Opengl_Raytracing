@@ -3,6 +3,7 @@
 #include <random>
 #include <iostream>
 #include <imgui.h>
+#include "global.h"
 
 AOManager::AOManager(int width, int height)
     : screenWidth(width), screenHeight(height) {

@@ -3,7 +3,7 @@
 #include <glm/glm.hpp>
 #include "Shader.h"
 #include <vector>
-#include "global.h"
+
 class AOManager {
 public:
     AOManager(int width, int height);

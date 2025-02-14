@@ -20,6 +20,7 @@ public:
 
     PerformanceProfiler(size_t historySize = 60);
     ~PerformanceProfiler();
+    void Init();
 
     void BeginFrame();
     void BeginGPUSection(Stage stage);

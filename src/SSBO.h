@@ -9,10 +9,10 @@ public:
     GLuint id;
     std::vector<Object> objects;
 
-    SSBO() {
+    SSBO() = default;
+    void Init() {
         glGenBuffers(1, &id);
     }
-
     void update() {
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, id);
         glBufferData(GL_SHADER_STORAGE_BUFFER,
