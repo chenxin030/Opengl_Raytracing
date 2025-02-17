@@ -12,8 +12,8 @@ public:
     // 程序ID
     GLuint ID;
 
-    // 构造函数读取并构建着色器
-    Shader(const char* vertexPath, const char* fragmentPath) {
+	Shader() {}
+    void Init(const char* vertexPath, const char* fragmentPath) {
         // 1. 从文件路径中获取顶点/片段着色器
         std::string vertexCode;
         std::string fragmentCode;
@@ -65,8 +65,7 @@ public:
         glDeleteShader(vertex);
         glDeleteShader(fragment);
     }
-
-    Shader(const char* computePath) {
+    void Init(const char* computePath) {
 
         std::string computeCode;
         std::ifstream cShaderFile;
@@ -97,6 +96,11 @@ public:
 
         glDeleteShader(compute);
     }
+
+    // 构造函数读取并构建着色器
+    Shader(const char* vertexPath, const char* fragmentPath) { Init(vertexPath, fragmentPath); }
+
+    Shader(const char* computePath) { Init(computePath); }
 
     // 使用/激活程序
     void use() const {

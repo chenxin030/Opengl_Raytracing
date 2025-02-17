@@ -9,10 +9,10 @@ public:
     GLuint id;
     std::vector<Light> lights;
 
-    LightSSBO() {
+    LightSSBO() = default;
+    void Init() {
         glGenBuffers(1, &id);
     }
-
     void update() {
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, id);
         glBufferData(

@@ -30,6 +30,21 @@
     <ClCompile Include="src\TextureLoader.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="src\PerformanceProfiler.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\AO.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\global.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ForwardShadingPipeline.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\DeferredShadingPipeline.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\Shader.h">
@@ -60,6 +75,30 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="src\LightSSBO.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\Material.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\SceneIO.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\TextureLoader.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\PerformanceProfiler.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\AO.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\global.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\ForwardShadingPipeline.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\DeferredShadingPipeline.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

@@ -5,23 +5,31 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 #include "TextureLoader.h"
+#include "SceneIO.h"
+#include "AO.h"
 
-ImGuiManager::ImGuiManager(GLFWwindow* window) : m_Window(window) {
+namespace fs = std::filesystem;
+
+ImGuiManager::ImGuiManager(GLFWwindow* window) : m_Window(window) {}
+
+void ImGuiManager::Init() {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
-	// 禁用状态保存，否则下次运行会是上次运行结束时的状态
-    io.IniFilename = nullptr; // 添加此行
+    // 禁用状态保存，否则下次运行会是上次运行结束时的状态
+    io.IniFilename = nullptr;
 
     SetupStyle();
-    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplGlfw_InitForOpenGL(m_Window, true);
     ImGui_ImplOpenGL3_Init("#version 430");
 
     // 加载默认天空盒
     std::string defaultPath = std::string("res/skybox/") + m_SkyboxPaths[0];
     m_CurrentSkyboxTexture = ConvertHDRToCubemap(defaultPath.c_str());
+
+    fs::create_directories("res/Scene");
 }
 
 ImGuiManager::~ImGuiManager() {
@@ -45,111 +53,287 @@ void ImGuiManager::EndFrame() {
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
-void ImGuiManager::DrawObjectsList(SSBO& ssbo)
-{
-    ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
+void ImGuiManager::DrawObjectsList(SSBO& ssbo) {
+    ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Always);
     ImGui::SetNextWindowCollapsed(true, ImGuiCond_FirstUseEver);
-    ImGui::Begin("Scene Objects");
+    ImGui::Begin("Scene Objects", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings);
 
-    static int objType = 0;
-    static float pos[3] = { 0.0f, 0.0f, -5.0f };
-    static float color[3] = { 1.0f, 1.0f, 1.0f };
-    static float radius = 1.0f;
-    static float normal[3] = { 0.0f, 1.0f, 0.0f };
+    static UIObject uiObj{ "New Object" };
+
+    // 名称输入
+    ImGui::InputText("Name", uiObj.name, IM_ARRAYSIZE(uiObj.name));
 
     // 物体类型选择
+	static int objType = 0;
     ImGui::RadioButton("Sphere", &objType, 0);
     ImGui::SameLine();
     ImGui::RadioButton("Plane", &objType, 1);
+    uiObj.obj.type = static_cast<ObjectType>(objType);
 
-    // 通用属性
-    ImGui::InputFloat3("Position", pos);
-    ImGui::ColorEdit3("Color", color);
-
-    // 类型特定属性
+    // 基础属性
+    ImGui::InputFloat3("Position", &uiObj.obj.position.x);
     if (objType == 0) {
-        ImGui::InputFloat("Radius", &radius);
+        ImGui::InputFloat("Radius", &uiObj.obj.radius);
     }
-
-    static float distance = 0.0f;
     if (objType == 1) {
-        ImGui::InputFloat3("Normal", normal);
-        ImGui::InputFloat("Distance", &distance);
+        ImGui::InputFloat3("Normal", &uiObj.obj.normal.x);
+        ImGui::InputFloat2("Size (W/H)", &uiObj.obj.size.x);
     }
 
-    // 添加物体按钮
-    if (ImGui::Button("Add Object")) {
-        Object newObj;
-        newObj.type = objType;
-        newObj.position = glm::vec3(pos[0], pos[1], pos[2]);
-        newObj.color = glm::vec3(color[0], color[1], color[2]);
-
-        if (objType == 0) {
-            newObj.radius = radius;
-        }
-        else if (objType == 1) {
-            newObj.normal = glm::normalize(glm::vec3(normal[0], normal[1], normal[2]));
-            newObj.distance = distance;
-        }
-        ssbo.objects.push_back(newObj);
-    }
-
-    // 显示物体总数
-    ImGui::Text("Total Objects: %d", ssbo.objects.size());
+    // 材质属性面板
     ImGui::Separator();
+    ImGui::Text("Material Settings");
 
-    // 遍历所有物体
-    for (int i = 0; i < ssbo.objects.size(); ++i) {
-        Object& obj = ssbo.objects[i];
+    // 材质类型选择
+	static int matType = 0;
+    ImGui::RadioButton("Metallic", &matType, MATERIAL_METALLIC);
+    ImGui::SameLine();
+    ImGui::RadioButton("Dielectric", &matType, MATERIAL_DIELECTRIC);
+    ImGui::SameLine();
+    ImGui::RadioButton("Plastic", &matType, MATERIAL_PLASTIC);
+	uiObj.obj.material.type = static_cast<MaterialType>(matType);
 
-        // 生成唯一标识符
+    // 通用参数
+    ImGui::ColorEdit3("Albedo", &uiObj.obj.material.albedo.r);
+    ImGui::SliderFloat("Roughness", &uiObj.obj.material.roughness, 0.0f, 1.0f);
+
+    // 类型特定参数
+    switch (uiObj.obj.material.type) {
+    case MATERIAL_METALLIC:
+        ImGui::SliderFloat("Metallic ", &uiObj.obj.material.metallic, 0.0f, 1.0f);
+        uiObj.obj.material.transparency = 0.0f; // 金属不透明
+        break;
+    case MATERIAL_DIELECTRIC:
+        ImGui::SliderFloat("IOR", &uiObj.obj.material.ior, 1.0f, 2.5f);
+        ImGui::SliderFloat("Transparency", &uiObj.obj.material.transparency, 0.0f, 1.0f);
+        uiObj.obj.material.metallic = 0.0f; // 电介质非金属
+        break;
+    case MATERIAL_PLASTIC:
+        ImGui::SliderFloat("Specular", &uiObj.obj.material.specular, 0.0f, 1.0f);
+        uiObj.obj.material.transparency = 0.0f; // 塑料不透明
+        break;
+    }
+
+    // 添加物体
+    if (ImGui::Button("Add Object")) {
+        ssbo.objects.push_back(uiObj.obj);
+        m_UIObjects.push_back(uiObj);
+    }
+
+    // 物体列表
+    ImGui::Separator();
+    ImGui::Text("Total Objects: %d", ssbo.objects.size());
+
+    for (int i = 0; i < m_UIObjects.size(); ++i) {
+        UIObject& uiObj = m_UIObjects[i];
+
         ImGui::PushID(i);
 
-        // 创建可折叠的树节点
-        bool nodeOpen = ImGui::TreeNodeEx(
+        if (ImGui::TreeNodeEx(
             (void*)(intptr_t)i,
-            ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_Framed,
-            "Object %d: %s", i, (obj.type == 0) ? "Sphere" : "Plane"
-        );
+            ImGuiTreeNodeFlags_DefaultOpen,
+            "%s##%d", uiObj.name, i)) 
+        {
+            // 编辑名称
+            ImGui::InputText("Name##obj", uiObj.name, IM_ARRAYSIZE(uiObj.name));
 
-        if (nodeOpen) {
-            // 显示通用属性
-            ImGui::Text("Position");
-            ImGui::InputFloat3("##pos", &obj.position.x);
+            // 同步位置
+            ImGui::InputFloat3("Position", &uiObj.obj.position.x);
 
-            ImGui::Text("Color");
-            ImGui::ColorEdit3("##col", &obj.color.x);
-
-            // 显示类型特定属性
-            if (obj.type == 0) { // 球体
-                ImGui::Text("Radius");
-                ImGui::InputFloat("##radius", &obj.radius);
+            // 类型相关属性同步
+            if (uiObj.obj.type == ObjectType::SPHERE) {
+                ImGui::DragFloat("Radius##obj", &uiObj.obj.radius, 0.1f, 0.0f, 100.0f);
             }
-            else { // 平面
-                ImGui::Text("Normal");
-                ImGui::InputFloat3("##normal", &obj.normal.x);
-                ImGui::Text("Distance");
-                ImGui::InputFloat("##distance", &obj.distance);
+            else if(uiObj.obj.type == ObjectType::PLANE) {
+                ImGui::InputFloat3("Normal##obj", &uiObj.obj.normal.x);
+                ImGui::InputFloat2("Size##obj", &uiObj.obj.size.x);
+            }
+
+            // 同步材质属性
+            ImGui::Separator();
+            ImGui::Text("Material Settings");
+
+            // 材质类型
+            int matType = uiObj.obj.material.type;
+            if (ImGui::RadioButton("Metallic##obj", &matType, MATERIAL_METALLIC) ||
+                ImGui::RadioButton("Dielectric##obj", &matType, MATERIAL_DIELECTRIC) ||
+                ImGui::RadioButton("Plastic##obj", &matType, MATERIAL_PLASTIC))
+            {
+                uiObj.obj.material.type = static_cast<MaterialType>(matType);
+            }
+
+            ImGui::ColorEdit3("Albedo##obj", &uiObj.obj.material.albedo.r);
+            ImGui::SliderFloat("Roughness##obj", &uiObj.obj.material.roughness, 0.0f, 1.0f);
+
+            // 类型特定参数
+            switch (uiObj.obj.material.type) {
+            case MATERIAL_METALLIC:
+                uiObj.obj.material.transparency = 0.0f; // 金属不透明
+                ImGui::SliderFloat("Metallic ##obj", &uiObj.obj.material.metallic, 0.0f, 1.0f);
+                break;
+            case MATERIAL_DIELECTRIC:
+                uiObj.obj.material.metallic = 0.0f; // 电介质非金属
+				uiObj.obj.material.specular = 0.0f; // 电介质无镜面反射
+                ImGui::SliderFloat("IOR##obj", &uiObj.obj.material.ior, 1.0f, 2.5f);
+                ImGui::SliderFloat("Transparency##obj", &uiObj.obj.material.transparency, 0.0f, 1.0f);
+                break;
+            case MATERIAL_PLASTIC:
+                uiObj.obj.material.transparency = 0.0f; // 塑料不透明
+                ImGui::SliderFloat("Specular##obj", &uiObj.obj.material.specular, 0.0f, 1.0f);
+                break;
             }
 
             ImGui::TreePop();
         }
 
-        bool deleteClicked = false;
+        // 删除按钮需要同时删除两个列表的元素
         if (ImGui::SmallButton("Delete")) {
-            // 先关闭节点再删除
-            if (nodeOpen) {
-                ImGui::PopID();
-            }
+            m_UIObjects.erase(m_UIObjects.begin() + i);
             ssbo.objects.erase(ssbo.objects.begin() + i);
-            i--; // 调整索引，避免跳过元素
-            continue;
+            i--;
         }
 
+        ssbo.objects[i] = uiObj.obj;
         ImGui::PopID();
     }
-    ssbo.update();
 
+    ssbo.update();
+    ImGui::End();
+}
+
+void ImGuiManager::DrawLightController(LightSSBO& lightSSBO) {
+
+    ImGui::SetNextWindowPos(ImVec2(10, 40), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowCollapsed(true, ImGuiCond_FirstUseEver);
+    ImGui::Begin("Light Controller");
+
+	static UILight uiLight{ "New Light" };
+
+	// 名称输入
+    ImGui::InputText("Name", uiLight.name, IM_ARRAYSIZE(uiLight.name));
+
+    // 光源类型选择
+    static int lightType = 0;
+    ImGui::RadioButton("Point", &lightType, 0);
+    ImGui::SameLine();
+    ImGui::RadioButton("Directional", &lightType, 1);
+    ImGui::SameLine();
+    ImGui::RadioButton("Area", &lightType, 2);
+	uiLight.light.type = static_cast<LightType>(lightType);
+
+    // 通用属性
+    ImGui::ColorEdit3("Color", &uiLight.light.color.x);
+    ImGui::SliderFloat("Intensity", &uiLight.light.intensity, 0.1f, 10.0f);
+
+    // 类型特定属性
+    if (lightType == 0) {
+        ImGui::InputFloat3("Position", &uiLight.light.position.x);
+        ImGui::SliderFloat("Radius", &uiLight.light.radius, 1.0f, 20.0f);
+    }
+    else if(lightType == 1){
+        ImGui::InputFloat3("Direction", &uiLight.light.direction.x);
+    }
+    else if (lightType == 2) {
+        ImGui::InputFloat3("Position", &uiLight.light.position.x);
+        ImGui::SliderFloat("Radius", &uiLight.light.radius, 1.0f, 20.0f);
+        ImGui::InputFloat3("Direction", &uiLight.light.direction.x);
+		ImGui::InputInt("Samples", &uiLight.light.samples);
+    }
+
+    // 在光源属性面板中添加
+    ImGui::Separator();
+    ImGui::Text("Shadow Settings");
+    ImGui::Combo("Shadow Type", &uiLight.light.shadowType, "None\0PCF\0PCSS\0");
+
+    if (uiLight.light.shadowType != 0) {
+        ImGui::SliderInt("PCF Samples", &uiLight.light.pcfSamples, 1, 16);
+        ImGui::SliderFloat("Softness", &uiLight.light.shadowSoftness, 0.0f, 2.0f);
+    }
+
+    if (uiLight.light.shadowType == 2) { // PCSS
+        if (lightType == 0 || lightType == 1) { // 点光源或定向光
+            ImGui::SliderFloat("Light Size", &uiLight.light.lightSize, 0.1f, 5.0f);
+        }
+        if (lightType == 1) { // 定向光
+            ImGui::SliderAngle("Angular Radius", &uiLight.light.angularRadius, 0.1f, 5.0f);
+        }
+    }
+
+    // 添加光源按钮
+    if (ImGui::Button("Add Light")) {
+        lightSSBO.lights.push_back(uiLight.light);
+		m_UILights.push_back(uiLight);
+    }
+
+    // 光源列表
+    ImGui::Separator();
+    ImGui::Text("Lights (%d)", lightSSBO.lights.size());
+
+    for (int i = 0; i < m_UILights.size(); ++i) {
+		UILight& uiLight = m_UILights[i];
+
+        ImGui::PushID(i);
+        if (ImGui::TreeNodeEx(
+            (void*)(intptr_t)i, 
+            ImGuiTreeNodeFlags_DefaultOpen,
+			"%s##%d", uiLight.name, i))
+        {
+			// 编辑名称
+			ImGui::InputText("Name##light", uiLight.name, IM_ARRAYSIZE(uiLight.name));
+
+            // 编辑属性
+            ImGui::ColorEdit3("Color", &uiLight.light.color.r);
+            ImGui::SliderFloat("Intensity", &uiLight.light.intensity, 0.1f, 10.0f);
+
+            if (uiLight.light.type == LightType::POINT) {
+                ImGui::InputFloat3("Position", &uiLight.light.position.x);
+                ImGui::SliderFloat("Radius", &uiLight.light.radius, 1.0f, 20.0f);
+            }
+            else if(uiLight.light.type == LightType::DIRECTIONAL) {
+                ImGui::InputFloat3("Direction", &uiLight.light.direction.x);
+            }
+			else if (uiLight.light.type == LightType::AREA) {
+                ImGui::InputFloat3("Position", &uiLight.light.position.x);
+                ImGui::SliderFloat("Radius", &uiLight.light.radius, 1.0f, 20.0f);
+				ImGui::InputFloat3("Direction", &uiLight.light.direction.x);
+				ImGui::InputInt("Samples", &uiLight.light.samples);
+			}
+
+            // 在光源属性面板中添加
+            ImGui::Separator();
+            ImGui::Text("Shadow Settings");
+            ImGui::Combo("Shadow Type", &uiLight.light.shadowType, "None\0PCF\0PCSS\0");
+
+            if (uiLight.light.shadowType != 0) {
+                ImGui::SliderInt("PCF Samples", &uiLight.light.pcfSamples, 1, 16);
+                ImGui::SliderFloat("Softness", &uiLight.light.shadowSoftness, 0.0f, 2.0f);
+            }
+
+            if (uiLight.light.shadowType == 2) { // PCSS
+                if (lightType == 0 || lightType == 1) { // 点光源或定向光
+                    ImGui::SliderFloat("Light Size", &uiLight.light.lightSize, 0.1f, 5.0f);
+                }
+                if (lightType == 1) { // 定向光
+                    ImGui::SliderAngle("Angular Radius", &uiLight.light.angularRadius, 0.1f, 5.0f);
+                }
+            }
+
+            // 删除按钮
+            if (ImGui::SmallButton("Delete")) {
+                lightSSBO.lights.erase(lightSSBO.lights.begin() + i);
+				m_UILights.erase(m_UILights.begin() + i);
+                ImGui::TreePop();
+                ImGui::PopID();
+                break;
+            }
+
+            ImGui::TreePop();
+        }
+        lightSSBO.lights[i] = uiLight.light;
+        ImGui::PopID();
+    }
+
+    lightSSBO.update();
     ImGui::End();
 }
 
@@ -161,7 +345,7 @@ void ImGuiManager::DrawCameraControls(Camera& camera) {
 
     // 位置控制
     ImGui::Text("Position");
-    ImGui::SliderFloat3("##pos", &camera.Position.x, -10.0f, 10.0f);
+    ImGui::SliderFloat3("##uiObj.obj.position", &camera.Position.x, -10.0f, 10.0f);
 
     // 方向显示
     ImGui::Text("Direction: (%.2f, %.2f, %.2f)",
@@ -174,96 +358,6 @@ void ImGuiManager::DrawCameraControls(Camera& camera) {
     // 摄像头移速
     ImGui::SliderFloat("Move Speed", &camera.MoveSpeed, 1.0f, 20.0f);
 
-    ImGui::End();
-}
-
-void ImGuiManager::DrawLightController(LightSSBO& lightSSBO) {
-
-    ImGui::SetNextWindowPos(ImVec2(10, 40), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowCollapsed(true, ImGuiCond_FirstUseEver);
-    ImGui::Begin("Light Controller");
-
-    static int lightType = 0;
-    static float pos[3] = { 0.0f, 3.0f, 0.0f };
-    static float color[3] = { 1.0f, 1.0f, 1.0f };
-    static float intensity = 1.0f;
-    static float radius = 5.0f;
-
-    // 光源类型选择
-    ImGui::RadioButton("Point", &lightType, 0);
-    ImGui::SameLine();
-    ImGui::RadioButton("Directional", &lightType, 1);
-
-    // 通用属性
-    ImGui::ColorEdit3("Color", color);
-    ImGui::SliderFloat("Intensity", &intensity, 0.1f, 10.0f);
-
-    // 类型特定属性
-    static float dir[3];
-    if (lightType == 0) {
-        ImGui::InputFloat3("Position", pos);
-        ImGui::SliderFloat("Radius", &radius, 1.0f, 20.0f);
-    }
-    else {
-        dir[0] = 0.0f; dir[1] = -1.0f; dir[2] = 0.0f;
-        ImGui::InputFloat3("Direction", dir);
-    }
-
-    // 添加光源按钮
-    if (ImGui::Button("Add Light")) {
-        Light newLight;
-        newLight.type = (lightType == 0) ? LightType::POINT : LightType::DIRECTIONAL;
-        newLight.color = glm::vec3(color[0], color[1], color[2]);
-        newLight.intensity = intensity;
-
-        if (lightType == 0) {
-            newLight.position = glm::vec3(pos[0], pos[1], pos[2]);
-            newLight.radius = radius;
-        }
-        else {
-            newLight.direction = glm::vec3(dir[0], dir[1], dir[2]);
-        }
-
-        lightSSBO.lights.push_back(newLight);
-    }
-
-    // 光源列表
-    ImGui::Separator();
-    ImGui::Text("Lights (%d)", lightSSBO.lights.size());
-
-    for (int i = 0; i < lightSSBO.lights.size(); ++i) {
-        ImGui::PushID(i);
-        Light& light = lightSSBO.lights[i];
-
-        if (ImGui::TreeNodeEx((void*)(intptr_t)i, ImGuiTreeNodeFlags_DefaultOpen,
-            "Light %d: %s", i, (light.type == LightType::POINT) ? "Point" : "Directional"))
-        {
-            // 编辑属性
-            ImGui::ColorEdit3("Color", &light.color.r);
-            ImGui::SliderFloat("Intensity", &light.intensity, 0.1f, 10.0f);
-
-            if (light.type == LightType::POINT) {
-                ImGui::InputFloat3("Position", &light.position.x);
-                ImGui::SliderFloat("Radius", &light.radius, 1.0f, 20.0f);
-            }
-            else {
-                ImGui::InputFloat3("Direction", &light.direction.x);
-            }
-
-            // 删除按钮
-            if (ImGui::SmallButton("Delete")) {
-                lightSSBO.lights.erase(lightSSBO.lights.begin() + i);
-                ImGui::TreePop();
-                ImGui::PopID();
-                break;
-            }
-
-            ImGui::TreePop();
-        }
-        ImGui::PopID();
-    }
-
-    lightSSBO.update();
     ImGui::End();
 }
 
@@ -320,7 +414,7 @@ void ImGuiManager::ChooseSkybox() {
     ImGui::Checkbox("Enable Skybox", &m_UseSkybox);
 
     // 天空盒选择下拉菜单
-    if (ImGui::Combo("Select Skybox", &m_SelectedSkyboxIndex, m_SkyboxNames.data(), static_cast<int>(m_SkyboxNames.size()))) {
+    if (m_UseSkybox && ImGui::Combo("Select Skybox", &m_SelectedSkyboxIndex, m_SkyboxNames.data(), static_cast<int>(m_SkyboxNames.size()))) {
         // 当选择改变时重新加载天空盒
         if (m_CurrentSkyboxTexture != 0) {
             glDeleteTextures(1, &m_CurrentSkyboxTexture);
@@ -331,6 +425,194 @@ void ImGuiManager::ChooseSkybox() {
     }
 
     ImGui::End();
+}
+
+void ImGuiManager::LoadSave(SSBO& ssbo, LightSSBO& lightSSBO) {
+    ImGui::SetNextWindowPos(ImVec2(10, 130), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowCollapsed(true, ImGuiCond_FirstUseEver);
+    ImGui::Begin("Load/Save");
+
+    if (ImGui::Button("Load Scene")) {
+        m_FileDialog.show = true;
+        m_FileDialog.isOpenMode = true;
+        m_FileDialog.currentPath = std::filesystem::current_path().string() + "/res/Scene";
+        RefreshFileList();
+    }
+
+    ImGui::SameLine();
+
+    if (ImGui::Button("Save Scene")) {
+        m_FileDialog.show = true;
+        m_FileDialog.isOpenMode = false;
+        m_FileDialog.currentPath = std::filesystem::current_path().string() + "/res/Scene";
+        RefreshFileList();
+    }
+
+    if (m_FileDialog.show) {
+        DrawFileDialog(ssbo, lightSSBO);
+    }
+
+    ImGui::End();
+}
+
+void ImGuiManager::DrawTAASettings()
+{
+    ImGui::SetNextWindowPos(ImVec2(10, 160), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowCollapsed(true, ImGuiCond_FirstUseEver);
+    ImGui::Begin("Anti-Aliasing (TAA)");
+
+    ImGui::Checkbox("Enable TAA", &m_EnableTAA);
+    if (m_EnableTAA) {
+        ImGui::SliderFloat("Blend Factor", &m_TAABlendFactor, 0.01f, 0.5f);
+    }
+
+    ImGui::End();
+}
+
+void ImGuiManager::DrawFileDialog(SSBO& ssbo, LightSSBO& lightSSBO) {
+    ImGui::SetNextWindowSize(ImVec2(500, 400), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin(m_FileDialog.isOpenMode ? "Load Scene##FileDialog" : "Save Scene##FileDialog", &m_FileDialog.show)) {
+        // 当前路径显示
+        ImGui::Text("Current Path: %s", m_FileDialog.currentPath.c_str());
+        if (ImGui::Button("↑ Up")) {
+            auto parent_path = std::filesystem::path(m_FileDialog.currentPath).parent_path();
+            if (!parent_path.empty()) {
+                m_FileDialog.currentPath = parent_path.string();
+                RefreshFileList();
+            }
+        }
+
+        // 文件列表
+        if (ImGui::BeginChild("FileList##Unique", ImVec2(0, 300), true)) {
+            for (size_t i = 0; i < m_FileDialog.entries.size(); ++i) {
+                const auto& entry = m_FileDialog.entries[i];
+                ImGui::PushID(static_cast<int>(i)); // 每个条目唯一ID
+
+                const bool isDirectory = entry.is_directory();
+                const std::string displayName = entry.path().filename().string();
+                const bool isParentDir = (i == 0 && displayName == "..");
+
+                // 显示可点击的目录/文件项
+                ImGuiSelectableFlags flags = ImGuiSelectableFlags_AllowDoubleClick;
+                if (ImGui::Selectable(
+                    isDirectory ? "[D] " : "[F] ",
+                    m_FileDialog.selectedFile == entry.path().string(),
+                    flags))
+                {
+                    if (isDirectory) {
+                        if (isParentDir) return; // 父目录需要双击
+                        m_FileDialog.selectedFile = ""; // 单击目录不清空路径
+                    }
+                    else {
+                        m_FileDialog.selectedFile = entry.path().string();
+                    }
+                }
+
+                // 处理双击事件
+                if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+                    if (isDirectory) {
+                        if (isParentDir) {
+                            m_FileDialog.currentPath = entry.path().string();
+                        }
+                        else {
+                            m_FileDialog.currentPath = entry.path().string();
+                        }
+                        RefreshFileList();
+                        m_FileDialog.selectedFile = "";
+                    }
+                }
+
+                // 显示文件名
+                ImGui::SameLine();
+                ImGui::Text("%s", displayName.c_str());
+
+                ImGui::PopID();
+            }
+        }
+        ImGui::EndChild();
+
+        // 文件名输入（保存模式）
+        static char fileName[256] = "untitled";
+        if (!m_FileDialog.isOpenMode) {
+            ImGui::InputText("File Name##Save", fileName, sizeof(fileName));
+            std::filesystem::path fullPath = std::filesystem::path(m_FileDialog.currentPath) / fileName;
+            if (fullPath.extension() != ".scene") {
+                fullPath.replace_extension(".scene");
+            }
+            m_FileDialog.selectedFile = fullPath.string();
+        }
+
+        // 显示当前选择
+        ImGui::TextColored(ImVec4(1, 1, 0, 1), "Selected: %s",
+            m_FileDialog.selectedFile.empty() ? "None" : m_FileDialog.selectedFile.c_str());
+
+        // 操作按钮
+        ImGui::BeginDisabled(m_FileDialog.isOpenMode && m_FileDialog.selectedFile.empty());
+        if (ImGui::Button(m_FileDialog.isOpenMode ? "Open##FDConfirm" : "Save##FDConfirm")) {
+            if (m_FileDialog.isOpenMode) {
+                // 加载场景
+                if (std::filesystem::exists(m_FileDialog.selectedFile)) {
+                    ssbo.objects.clear();
+                    m_UIObjects.clear();
+                    lightSSBO.lights.clear();
+                    m_UILights.clear();
+
+                    if (SceneIO::Load(m_FileDialog.selectedFile, m_UIObjects, m_UILights)) {
+                        // 同步UI对象
+                        for (const auto& uiObj : m_UIObjects) {
+                            ssbo.objects.push_back(uiObj.obj);
+                        }
+						for (const auto& uiLight : m_UILights) {
+							lightSSBO.lights.push_back(uiLight.light);
+						}
+                        ssbo.update();
+                        lightSSBO.update();
+                    }
+                }
+            }
+            else {
+                // 保存场景
+                if (!m_FileDialog.selectedFile.empty()) {
+                    SceneIO::Save(m_FileDialog.selectedFile, m_UIObjects, m_UILights);
+                }
+            }
+            m_FileDialog.show = false;
+        }
+        ImGui::EndDisabled();
+
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel##FDCancel")) {
+            m_FileDialog.show = false;
+        }
+
+        ImGui::End();
+    }
+}
+
+void ImGuiManager::RefreshFileList()
+{
+    m_FileDialog.entries.clear();
+
+    // 添加返回上级目录
+    if (m_FileDialog.currentPath != std::filesystem::path(m_FileDialog.currentPath).root_path()) {
+        m_FileDialog.entries.emplace_back(std::filesystem::path(m_FileDialog.currentPath).parent_path());
+    }
+
+    // 遍历当前目录
+    for (const auto& entry : std::filesystem::directory_iterator(m_FileDialog.currentPath)) {
+        if (entry.is_directory() ||
+            (entry.is_regular_file() && entry.path().extension() == ".scene")) {
+            m_FileDialog.entries.push_back(entry);
+        }
+    }
+
+    // 排序：目录在前，文件在后
+    std::sort(m_FileDialog.entries.begin(), m_FileDialog.entries.end(),
+        [](const auto& a, const auto& b) {
+        if (a.is_directory() != b.is_directory())
+            return a.is_directory();
+        return a.path().filename() < b.path().filename();
+    });
 }
 
 void ImGuiManager::HandleCameraMovement(Camera& camera, float deltaTime)
