@@ -1,4 +1,4 @@
-#include "Application.h"
+#include "ForwardShadingPipeline.h"
 #include <iostream>
 #include "global.h"
 
@@ -103,14 +103,16 @@ void ForwardShadingPipline::InitAO()
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, WIDTH, HEIGHT, 0, GL_RGBA, GL_FLOAT, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glBindImageTexture(1, gPositionTex, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
     glGenTextures(1, &gNormalTex);
     glBindTexture(GL_TEXTURE_2D, gNormalTex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, WIDTH, HEIGHT, 0, GL_RGBA, GL_FLOAT, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glBindImageTexture(2, gNormalTex, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
 }
 
-void ForwardShadingPipline::Run()
+void ForwardShadingPipline::Render()
 {
     while (!glfwWindowShouldClose(window)) {
 
@@ -146,11 +148,11 @@ void ForwardShadingPipline::Run()
         raytracingShader.setFloat("fov", camera.FOV);
 
         // °ó¶¨Ìì¿ÕºÐ
+        raytracingShader.setBool("useSkybox", imguiManager.IsSkyboxEnabled());
         if (imguiManager.IsSkyboxEnabled()) {
-            glActiveTexture(GL_TEXTURE1);
+            glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_CUBE_MAP, imguiManager.GetCurrentSkyboxTexture());
         }
-        raytracingShader.setBool("useSkybox", imguiManager.IsSkyboxEnabled());
 
         gProfiler.BeginFrame();
         gProfiler.BeginGPUSection(PerformanceProfiler::Stage::RayTracing);

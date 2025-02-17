@@ -112,9 +112,12 @@ void AOManager::RenderSSAO(GLuint positionTex, GLuint normalTex, const glm::mat4
 }
 
 void AOManager::DrawUI() {
+    ImGui::SetNextWindowPos(ImVec2(10, 190), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowCollapsed(true, ImGuiCond_FirstUseEver);
     ImGui::Begin("AO Settings", &showSettings);
     ImGui::Checkbox("Enable AO", &enableAO);
     ImGui::SliderFloat("AO Strength", &aoStrength, 0.0f, 2.0f);
+    aoStrength *= enableAO;
     ImGui::End();
 }
 

@@ -404,25 +404,26 @@ void ImGuiManager::DrawFPS() {
     ImGui::End();
 }
 
-void ImGuiManager::DrawTAASettings()
-{
-    ImGui::SetNextWindowPos(ImVec2(10, 160), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowCollapsed(true, ImGuiCond_FirstUseEver);
-    ImGui::Begin("Anti-Aliasing (TAA)");
+void ImGuiManager::ChooseSkybox() {
 
-    ImGui::Checkbox("Enable TAA", &m_EnableTAA);
-    if (m_EnableTAA) {
-        ImGui::SliderFloat("Blend Factor", &m_TAABlendFactor, 0.01f, 0.5f);
+    ImGui::SetNextWindowPos(ImVec2(10, 100), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowCollapsed(true, ImGuiCond_FirstUseEver);
+    ImGui::Begin("Skybox Settings");
+
+    // 启用/禁用天空盒复选框
+    ImGui::Checkbox("Enable Skybox", &m_UseSkybox);
+
+    // 天空盒选择下拉菜单
+    if (m_UseSkybox && ImGui::Combo("Select Skybox", &m_SelectedSkyboxIndex, m_SkyboxNames.data(), static_cast<int>(m_SkyboxNames.size()))) {
+        // 当选择改变时重新加载天空盒
+        if (m_CurrentSkyboxTexture != 0) {
+            glDeleteTextures(1, &m_CurrentSkyboxTexture);
+            m_CurrentSkyboxTexture = 0;
+        }
+        std::string fullPath = std::string("res/skybox/") + m_SkyboxPaths[m_SelectedSkyboxIndex];
+        m_CurrentSkyboxTexture = ConvertHDRToCubemap(fullPath.c_str());
     }
 
-    ImGui::End();
-}
-
-void ImGuiManager::DrawAOSettings()
-{
-    ImGui::Begin("AO Settings");
-    ImGui::Checkbox("Enable AO", &(aoManager->enableAO));
-    ImGui::SliderFloat("AO Strength", &(aoManager->aoStrength), 0.0f, 2.0f);
     ImGui::End();
 }
 
@@ -454,24 +455,15 @@ void ImGuiManager::LoadSave(SSBO& ssbo, LightSSBO& lightSSBO) {
     ImGui::End();
 }
 
-void ImGuiManager::ChooseSkybox() {
-
-    ImGui::SetNextWindowPos(ImVec2(10, 100), ImGuiCond_FirstUseEver);
+void ImGuiManager::DrawTAASettings()
+{
+    ImGui::SetNextWindowPos(ImVec2(10, 160), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowCollapsed(true, ImGuiCond_FirstUseEver);
-    ImGui::Begin("Skybox Settings");
+    ImGui::Begin("Anti-Aliasing (TAA)");
 
-    // 启用/禁用天空盒复选框
-    ImGui::Checkbox("Enable Skybox", &m_UseSkybox);
-
-    // 天空盒选择下拉菜单
-    if (ImGui::Combo("Select Skybox", &m_SelectedSkyboxIndex, m_SkyboxNames.data(), static_cast<int>(m_SkyboxNames.size()))) {
-        // 当选择改变时重新加载天空盒
-        if (m_CurrentSkyboxTexture != 0) {
-            glDeleteTextures(1, &m_CurrentSkyboxTexture);
-            m_CurrentSkyboxTexture = 0;
-        }
-        std::string fullPath = std::string("res/skybox/") + m_SkyboxPaths[m_SelectedSkyboxIndex];
-        m_CurrentSkyboxTexture = ConvertHDRToCubemap(fullPath.c_str());
+    ImGui::Checkbox("Enable TAA", &m_EnableTAA);
+    if (m_EnableTAA) {
+        ImGui::SliderFloat("Blend Factor", &m_TAABlendFactor, 0.01f, 0.5f);
     }
 
     ImGui::End();

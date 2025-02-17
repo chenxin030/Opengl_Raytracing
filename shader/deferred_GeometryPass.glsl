@@ -39,7 +39,8 @@ struct Object {
 layout(local_size_x = 32, local_size_y = 32) in;
 layout(rgba32f, binding = 0) uniform image2D gPosition;
 layout(rgba16f, binding = 1) uniform image2D gNormal;
-layout(rgba16f, binding = 2) uniform image2D gMaterail;
+layout(rgba16f, binding = 2) uniform image2D gMaterial;
+layout(rgba8, binding = 3) uniform image2D gAlbedo;
 
 layout(std430, binding = 0) buffer Objects {
     Object objects[];
@@ -164,7 +165,7 @@ bool intersectObjects(Ray ray, out Material hitMaterial, out vec3 hitNormal, out
     return hit;
 }
 
-// 原理1：光线生成
+// 光线生成
 void generateCameraRay(out Ray ray, vec2 jitter) {
     ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);
     ivec2 imageSize = imageSize(gPosition);
@@ -205,20 +206,22 @@ void main() {
     vec3 finalColor = vec3(0.0);
     vec3 throughput = vec3(1.0);
     
-    vec3 P;
-    vec3 V;
-    vec3 N;
+    Material finalMat;
+    vec3 finalP, finalN;
+    bool hasHit = false;
 
     for(int depth = 0; depth < MAX_RAY_DEPTH; ++depth) {
         Material mat;
         float t;
+        vec3 N;
         
-        if(!intersectObjects(ray, mat, N, t)) {
-            break;
+        if(intersectObjects(ray, mat, N, t)) {
+            finalMat = mat;
+            finalP = ray.origin + ray.direction * t;
+            finalN = N;
+            hasHit = true;
+            break; // 仅记录首次命中
         }
-        
-        P = ray.origin + ray.direction * t;
-        V = normalize(-ray.direction);
         
         // 俄罗斯轮盘赌终止条件
         if(depth > 2) {
@@ -230,7 +233,21 @@ void main() {
         ray.energy *= 0.8; // 能量衰减
     }
     
-    imageStore(gPosition, pixelCoords, vec4(P, 1.0));
-    imageStore(gNormal, pixelCoords, vec4(N, 1.0));
+    if(hasHit) {
+        imageStore(gPosition, pixelCoords, vec4(finalP, 1.0));
+        imageStore(gNormal, pixelCoords, vec4(finalN, 1.0));
+        imageStore(gMaterial, pixelCoords, vec4(
+            finalMat.metallic,
+            finalMat.roughness,
+            finalMat.transparency,
+            finalMat.ior
+        ));
+        imageStore(gAlbedo, pixelCoords, vec4(finalMat.albedo, 1.0)); // 写入Albedo
+    } else {
+        imageStore(gPosition, pixelCoords, vec4(0));
+        imageStore(gNormal, pixelCoords, vec4(0));
+        imageStore(gMaterial, pixelCoords, vec4(0));
+        imageStore(gAlbedo, pixelCoords, vec4(0));
+    }
     
 }

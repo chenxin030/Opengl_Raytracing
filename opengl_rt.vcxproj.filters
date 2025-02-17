@@ -39,7 +39,10 @@
     <ClCompile Include="src\global.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="src\Application.cpp">
+    <ClCompile Include="src\ForwardShadingPipeline.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="src\DeferredShadingPipeline.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>
@@ -92,7 +95,10 @@
     <ClInclude Include="src\global.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="src\Application.h">
+    <ClInclude Include="src\ForwardShadingPipeline.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="src\DeferredShadingPipeline.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

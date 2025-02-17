@@ -26,9 +26,9 @@ public:
     void DrawObjectsList(class SSBO& ssbo);
     void DrawLightController(LightSSBO& lightSSBO);
     void DrawCameraControls(Camera& camera);
-    void DrawFPS();
 	void DrawTAASettings();
-    void DrawAOSettings();
+
+    void DrawFPS();
 
 	// Skybox
     GLuint GetCurrentSkyboxTexture() const { return m_CurrentSkyboxTexture; }
@@ -59,7 +59,6 @@ public:
     std::vector<UIObject> m_UIObjects;
     std::vector<UILight> m_UILights;
 private:
-
 
     // skybox
     bool m_UseSkybox = true;

@@ -8,12 +8,16 @@
 class ForwardShadingPipline {
 private:
 	GLFWwindow* window = nullptr;
-	Shader raytracingShader;
-	Shader outputShader;
-	GLuint outputTex;
 	ImGuiManager imguiManager;
 	SSBO ssbo;
 	LightSSBO lightSSBO;
+	// GPU Time Query
+	PerformanceProfiler gProfiler;
+
+	Shader raytracingShader;
+	// display
+	Shader outputShader;
+	GLuint outputTex;
 	// bloom
 	GLuint bloomFBOs[2], bloomTextures[2];
 	Shader extractShader; 
@@ -26,8 +30,6 @@ private:
 	// AO
 	AOManager* aoManager = nullptr;
 	GLuint gPositionTex, gNormalTex; // ¼¸ºÎ»º³åÇø
-    // GPU Time Query
-	PerformanceProfiler gProfiler;
 
 
 public:
@@ -51,5 +53,5 @@ public:
 	void InitTAA();
 	void InitAO();
 
-	void Run();
+	void Render();
 };

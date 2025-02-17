@@ -132,7 +132,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src\AO.cpp" />
-    <ClCompile Include="src\Application.cpp" />
+    <ClCompile Include="src\DeferredShadingPipeline.cpp" />
+    <ClCompile Include="src\ForwardShadingPipeline.cpp" />
     <ClCompile Include="src\global.cpp" />
     <ClCompile Include="src\ImGUIManager.cpp" />
     <ClCompile Include="src\imgui_impl_glfw.cpp" />
@@ -143,8 +144,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\AO.h" />
-    <ClInclude Include="src\Application.h" />
+    <ClInclude Include="src\ForwardShadingPipeline.h" />
     <ClInclude Include="src\Camera.h" />
+    <ClInclude Include="src\DeferredShadingPipeline.h" />
     <ClInclude Include="src\global.h" />
     <ClInclude Include="src\ImGUIManager.h" />
     <ClInclude Include="src\imgui_impl_glfw.h" />

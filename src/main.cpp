@@ -1,8 +1,8 @@
-#include "Application.h"
+#include "ForwardShadingPipeline.h"
 
 int main() {
 
     ForwardShadingPipline app;
-    app.Run();
+    app.Render();
     return 0;
 }

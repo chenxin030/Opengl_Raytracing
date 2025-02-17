@@ -75,6 +75,8 @@ PerformanceProfiler::GetGPUTimeHistory() const {
 }
 
 void PerformanceProfiler::DrawImGuiPanel() const {
+    ImGui::SetNextWindowPos(ImVec2(10, 220), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowCollapsed(true, ImGuiCond_FirstUseEver);
     ImGui::Begin("Performance Profiler");
 
     if (m_frameHistory.empty()) {
