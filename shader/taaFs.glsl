@@ -5,6 +5,8 @@ uniform float uBlendFactor;
 uniform float uJitterX;
 uniform float uJitterY;
 
+uniform sampler2D gNormal;
+
 in vec2 TexCoords;
 out vec4 fragColor;
 
@@ -36,8 +38,16 @@ void main() {
     
     // 钳制历史颜色到邻域范围
     history = clipAABB(history, minColor, maxColor);
-    
+
+    // 法线检查，增强时空滤波
+    float blendFactor = 0.0;
+    vec3 prevNormal = texture(gNormal, TexCoords).rgb;
+    vec3 currNormal = texture(gNormal, jitteredUV).rgb;
+    if (dot(prevNormal, currNormal) < 0.9) {
+        blendFactor = uBlendFactor * 0.2; // 法线变化大时降低历史权重
+    }
+
     // 混合当前帧与历史帧
-    vec3 result = mix(history, current, uBlendFactor);
+    vec3 result = mix(history, current, blendFactor);
     fragColor = vec4(result, 1.0);
 }

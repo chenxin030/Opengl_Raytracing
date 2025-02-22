@@ -1,7 +1,8 @@
 #version 430 core
 
-// 新增最大递归深度限制
-#define MAX_RAY_DEPTH 1 
+#define DIFFUSE_SAMPLES 8     // 每像素漫反射采样数
+#define MAX_RAY_DEPTH 3       // 增大递归深度
+
 const float PI = 3.14159265359;
 
 struct AABB {
@@ -21,6 +22,7 @@ struct Material {
     vec3 albedo;
     float metallic;
     float roughness; 
+    float diffuseStrength;    // 漫反射强度（0=无漫反射）
     float ior;
     float transparency;
     float specular;
@@ -282,6 +284,31 @@ float haltonSequence(int index, int base) {
     return result;
 }
 
+// 余弦加权半球采样（重要性采样）
+vec3 cosineWeightedHemisphere(vec2 rand, vec3 normal) {
+    float phi = 2.0 * PI * rand.x;
+    float cosTheta = sqrt(rand.y);
+    float sinTheta = sqrt(1.0 - rand.y);
+    
+    vec3 hemisphereDir = vec3(
+        sinTheta * cos(phi),
+        cosTheta,
+        sinTheta * sin(phi)
+    );
+    
+    // 对齐到法线方向
+    vec3 tangent = normalize(cross(normal, vec3(0, 1, 1)));
+    vec3 bitangent = cross(normal, tangent);
+    return normalize(tangent * hemisphereDir.x + 
+                    bitangent * hemisphereDir.z + 
+                    normal * hemisphereDir.y);
+}
+
+// 低差异随机数生成
+vec2 hammersley(int i, int N) {
+    return vec2(float(i)/float(N), haltonSequence(i, 2));
+}
+
 // 通用PCF实现
 float pcfShadow(vec3 point, vec3 normal, Light light, vec3 lightDir, float lightDistance) {
     float shadow = 0.0;
@@ -481,7 +508,8 @@ void main() {
         
         // 俄罗斯轮盘赌终止条件
         if(depth > 2) {
-            float continueProb = min(max(throughput.x, max(throughput.y, throughput.z)) * 0.95, 0.95);
+            float diffuseWeight = length(mat.albedo) * mat.diffuseStrength;
+            float continueProb = min(max(throughput.x, max(throughput.y, throughput.z)) * 0.95 + diffuseWeight, 0.99);
             if(random(gl_GlobalInvocationID.xy + depth) > continueProb) break;
             throughput /= continueProb;
         }
@@ -490,7 +518,20 @@ void main() {
         float F = fresnelSchlick(max(dot(V, N), 0.0), mat.ior);
         
         // 选择反射或折射（选择射线方向）给下一次用
-        if(mat.transparency > 0.0) {
+        if (mat.diffuseStrength > 0.0) {
+            // 生成低差异随机数
+            vec2 rand = hammersley(depth * 64 + frameCount, 64);
+    
+            // 重要性采样：根据粗糙度混合镜面与漫反射
+            vec3 specularDir = reflect(ray.direction, N);
+            vec3 diffuseDir = cosineWeightedHemisphere(rand, N);
+            vec3 mixedDir = mix(specularDir, diffuseDir, mat.roughness);
+    
+            // 更新光线
+            ray.direction = normalize(mixedDir);
+            ray.origin = P + N * 0.001;
+            throughput *= mat.albedo * mat.diffuseStrength;
+        }else if(mat.transparency > 0.0) {
             ray.direction = calculateRefraction(ray, P, N, mat, ray.energy);
             ray.origin = P - N * 0.001;
             throughput *= mat.albedo * (1.0 - F) * mat.transparency;
