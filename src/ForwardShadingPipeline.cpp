@@ -14,8 +14,8 @@ void ForwardShadingPipline::Init()
     ssbo.Init();
     lightSSBO.Init();
     InitBloom();
-    InitTAA();
     InitAO();
+    InitTAA();
     gProfiler.Init();
 }
 
@@ -229,7 +229,6 @@ void ForwardShadingPipline::Render()
 
         // TAA
         gProfiler.BeginGPUSection(PerformanceProfiler::Stage::TAA);
-
         if (imguiManager.IsTAAEnabled()) {
             glBindFramebuffer(GL_FRAMEBUFFER, taaFBO);
             glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, historyTex[currentHistory], 0);
@@ -238,6 +237,7 @@ void ForwardShadingPipline::Render()
             taaShader.setFloat("uBlendFactor", imguiManager.GetTAABlendFactor());
             taaShader.setInt("uCurrentFrame", 0);
             taaShader.setInt("uHistory", 1);
+            taaShader.setInt("gNormal", 2);
             taaShader.setFloat("uJitterX", haltonSequence(frameCount % 8, 2) * 0.5 / WIDTH);
             taaShader.setFloat("uJitterY", haltonSequence(frameCount % 8, 3) * 0.5 / HEIGHT);
 
@@ -245,6 +245,8 @@ void ForwardShadingPipline::Render()
             glBindTexture(GL_TEXTURE_2D, outputTex); // 当前帧
             glActiveTexture(GL_TEXTURE1);
             glBindTexture(GL_TEXTURE_2D, historyTex[1 - currentHistory]); // 上一帧
+            glActiveTexture(GL_TEXTURE2);
+            glBindTexture(GL_TEXTURE_2D, gNormalTex);
 
             RenderQuad();
 

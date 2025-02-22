@@ -36,9 +36,6 @@ void main() {
         }
     }
     
-    // 钳制历史颜色到邻域范围
-    history = clipAABB(history, minColor, maxColor);
-
     // 法线检查，增强时空滤波
     float blendFactor = 0.0;
     vec3 prevNormal = texture(gNormal, TexCoords).rgb;
@@ -46,6 +43,9 @@ void main() {
     if (dot(prevNormal, currNormal) < 0.9) {
         blendFactor = uBlendFactor * 0.2; // 法线变化大时降低历史权重
     }
+
+    // 钳制历史颜色到邻域范围
+    history = clipAABB(history, minColor, maxColor);
 
     // 混合当前帧与历史帧
     vec3 result = mix(history, current, blendFactor);
