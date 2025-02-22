@@ -79,6 +79,10 @@ uniform bool useSkybox;
 
 uniform float maxRayDistance = 114514.0; // 最大射线距离限制
 
+uniform sampler2D blueNoiseTex;
+uniform vec2 noiseScale;
+uniform int frameCount;
+
 bool intersectAABB(Ray ray, AABB aabb, out float tMin, out float tMax) {
     vec3 invDir = 1.0 / ray.direction;
     vec3 t0 = (aabb.min - ray.origin) * invDir;
@@ -186,7 +190,6 @@ bool intersectObjects(Ray ray, out Material hitMaterial, out vec3 hitNormal, out
     return hit;
 }
 
-// 原理1：光线生成
 void generateCameraRay(out Ray ray, vec2 jitter) {
     ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);
     ivec2 imageSize = imageSize(outputImage);
@@ -214,7 +217,7 @@ float fresnelSchlick(float cosTheta, float ior) {
     return r0 + (1.0 - r0) * pow(1.0 - cosTheta, 5.0); // = R：反射的占比
 }
 
-// 原理2：基于物理的材质（PBR）
+// 基于物理的材质（PBR）
 vec3 computePBR(Material mat, vec3 N, vec3 V, vec3 L, vec3 H, vec3 radiance) {
     // 粗糙度重映射
     float alpha = pow(mat.roughness, 2.0);
@@ -244,7 +247,7 @@ vec3 computePBR(Material mat, vec3 N, vec3 V, vec3 L, vec3 H, vec3 radiance) {
     return (diffuse + specular) * radiance * max(dot(N, L), 0.0);
 }
 
-// 原理3：折射处理（使用Snell定律）
+// 折射反向和能量（使用Snell定律）
 vec3 calculateRefraction(Ray ray, vec3 hitPoint, vec3 N, Material mat, inout float energy) {
     bool entering = dot(ray.direction, N) < 0.0;
     float eta = entering ? (1.0 / mat.ior) : mat.ior;
@@ -266,6 +269,7 @@ float random(vec2 st) {
     return fract(sin(dot(st.xy, vec2(12.9898,78.233)))*43758.5453123);
 }
 
+// 低差异序列确保采样点均匀分布，减少噪声。
 float haltonSequence(int index, int base) {
     float result = 0.0;
     float f = 1.0 / base;
@@ -278,50 +282,33 @@ float haltonSequence(int index, int base) {
     return result;
 }
 
-// 修改区域光源采样函数
-vec3 sampleAreaLight(Light light, vec3 point, vec2 rand, out float pdf) {
-    // 极坐标采样（余弦加权）
-    float theta = 2.0 * PI * rand.x;
-    float r = sqrt(rand.y);// 均匀分布
-    
-    // 构建光源坐标系
-    vec3 normal = normalize(-light.direction); // 修正方向
-    vec3 tangent = normalize(cross(normal, vec3(0,1,0)));
-    if(length(tangent) < 0.1) 
-        tangent = normalize(cross(normal, vec3(1,0,0)));
-    vec3 bitangent = normalize(cross(normal, tangent));
-    
-    // 生成采样点
-    vec2 disk = r * vec2(cos(theta), sin(theta));
-    vec3 samplePos = light.position + 
-                    light.radius * (disk.x * tangent + disk.y * bitangent);
-    
-    // 计算概率密度函数(PDF)（面积倒数）
-    float area = light.radius * light.radius * PI; // 正确面积计算
-    pdf = 1.0 / (area * light.samples);
-
-    return samplePos;
-}
-
-
 // 通用PCF实现
 float pcfShadow(vec3 point, vec3 normal, Light light, vec3 lightDir, float lightDistance) {
     float shadow = 0.0;
-    float filterSize = light.shadowSoftness * 0.005;
+    float filterSize;    // 滤波器大小
     vec3 tangent, bitangent;
 
-    // 构建切线空间
+    // 构建切线空间（偏移采样方向）
     if(light.type == 1) { // 定向光
         tangent = normalize(cross(lightDir, vec3(0,1,0)));
         bitangent = cross(lightDir, tangent);
+        // 模拟光源的角半径对阴影的影响，半影尺寸 = 光源角半径 * 距离
         filterSize = light.angularRadius * lightDistance;
     } else { // 点光源/区域光
         tangent = normalize(cross(lightDir, vec3(0,1,0)));
         bitangent = cross(lightDir, tangent);
     }
-
+    
+    // 使用蓝噪声抖动采样
+    vec2 noiseUV = (gl_GlobalInvocationID.xy + frameCount) * noiseScale;
+    vec2 jitter = texture(blueNoiseTex, noiseUV).rg;
+    
     for(int i = 0; i < light.pcfSamples; i++) {
-        vec2 rand = vec2(haltonSequence(i, 2) * 2.0 - 1.0);
+        // 经验值控制柔化强度
+        filterSize = light.shadowSoftness * 0.005;
+        // 使用Halton序列生成采样偏移
+        vec2 rand = vec2(haltonSequence(i, 2), haltonSequence(i, 3)) + jitter;
+        rand = fract(rand);
         vec3 jitteredDir;
 
         if(light.type == 1) { // 定向光
@@ -361,6 +348,7 @@ float pcssShadow(vec3 point, vec3 normal, Light light, vec3 lightDir, float ligh
     float searchSize = light.lightSize * 0.1;
 
     for(int i = 0; i < 16; i++) {
+        // 采样方向偏移
         vec2 rand = vec2(haltonSequence(i, 3) * 2.0 - 1.0);
         vec3 sampleDir = lightDir + rand.x * searchSize + rand.y * searchSize;
 
@@ -387,36 +375,20 @@ float pcssShadow(vec3 point, vec3 normal, Light light, vec3 lightDir, float ligh
     if(blockerCount == 0) return 1.0;
     avgBlockerDepth /= blockerCount;
 
-    // 步骤2：计算半影尺寸
-    float penumbraSize = (avgBlockerDepth - lightDistance) * light.lightSize;
+    // 步骤2：计算半影尺寸:与遮挡物深度差和光源尺寸成正比。
+    float penumbraSize = (lightDistance - avgBlockerDepth) * light.lightSize;
     penumbraSize *= light.shadowSoftness;
 
     // 步骤3：动态PCF
     return pcfShadow(point, normal, light, lightDir, lightDistance);
 }
 
-// 统一阴影计算函数
-float calculateShadow(vec3 point, vec3 normal, Light light) {
+float calculateShadow(vec3 point, vec3 normal, vec3 lightDir, float lightDistance, Light light) {
     if(light.shadowType == 0) return 1.0;
     
     float shadow = 0.0;
-    vec3 lightDir;
-    float lightDistance;
 
-    // 计算基础光照参数
-    if(light.type == 0) { // 点光源
-        lightDir = light.position - point;
-        lightDistance = length(lightDir);
-        lightDir = normalize(lightDir);
-    } else if(light.type == 1) { // 定向光
-        lightDir = normalize(-light.direction);
-        lightDistance = 1e6;
-    } else { // 区域光
-        lightDir = normalize(light.position - point);
-        lightDistance = length(light.position - point);
-    }
-
-    // 阴影类型处理
+    // 选择阴影类型
     if(light.shadowType == 1) { // PCF
         shadow = pcfShadow(point, normal, light, lightDir, lightDistance);
     } else if(light.shadowType == 2) { // PCSS
@@ -448,18 +420,20 @@ vec3 computeLighting(vec3 P, vec3 N, Material mat, vec3 V) {
             lightDistance = 1e6; // 无限远
         }
         else if(light.type == 2) { // 区域光
-            // 使用基于物理的衰减
-            float distance = length(light.position - P);
-            attenuation = 1.0 / (distance * distance);
+            // 使用基于物理的衰减点光源
+            lightDir = light.position - P;
+            lightDistance = length(lightDir);
+            lightDir = normalize(lightDir);
+            attenuation = 1.0 / (lightDistance * lightDistance);
         
             // 计算光源法线方向贡献
             vec3 lightNormal = normalize(light.direction);
-            float lightCos = max(dot(lightDir, lightNormal), 0.0); // 移除负号
+            float lightCos = max(dot(lightDir, lightNormal), 0.0);
             attenuation *= lightCos;
         }
         
         // 计算阴影因子
-        float shadowFactor = calculateShadow(P, N, light);
+        float shadowFactor = calculateShadow(P, N, lightDir, lightDistance, light);
         
         // 使用PBR计算光照
         vec3 L = normalize(lightDir);
@@ -473,11 +447,10 @@ vec3 computeLighting(vec3 P, vec3 N, Material mat, vec3 V) {
 
 void main() {
     ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);
-
+    
     vec2 jitter = vec2(
-            random(pixelCoords + vec2(1, 0)),
-            random(pixelCoords + vec2(0, 1))
-        ) - 0.5;
+        texture(blueNoiseTex, (gl_GlobalInvocationID.xy + frameCount) * noiseScale).xy
+    ) * 2.0 - 1.0; // 范围映射到[-1,1]
 
     Ray ray;
     generateCameraRay(ray, jitter);
@@ -506,9 +479,6 @@ void main() {
         vec3 Lo = computeLighting(P, N, mat, V);
         finalColor += throughput * Lo;
         
-        // 计算反射/折射
-        float F = fresnelSchlick(max(dot(V, N), 0.0), mat.ior);
-        
         // 俄罗斯轮盘赌终止条件
         if(depth > 2) {
             float continueProb = min(max(throughput.x, max(throughput.y, throughput.z)) * 0.95, 0.95);
@@ -516,7 +486,10 @@ void main() {
             throughput /= continueProb;
         }
         
-        // 选择反射或折射
+        // 计算反射/折射
+        float F = fresnelSchlick(max(dot(V, N), 0.0), mat.ior);
+        
+        // 选择反射或折射（选择射线方向）给下一次用
         if(mat.transparency > 0.0) {
             ray.direction = calculateRefraction(ray, P, N, mat, ray.energy);
             ray.origin = P - N * 0.001;

@@ -116,6 +116,7 @@ void ImGuiManager::DrawObjectsList(SSBO& ssbo) {
 
     // 添加物体
     if (ImGui::Button("Add Object")) {
+        GenerateAABBForObject(uiObj.obj);
         ssbo.objects.push_back(uiObj.obj);
         m_UIObjects.push_back(uiObj);
     }
@@ -193,6 +194,7 @@ void ImGuiManager::DrawObjectsList(SSBO& ssbo) {
             i--;
         }
 
+        GenerateAABBForObject(uiObj.obj);
         ssbo.objects[i] = uiObj.obj;
         ImGui::PopID();
     }
@@ -357,6 +359,9 @@ void ImGuiManager::DrawCameraControls(Camera& camera) {
 
     // 摄像头移速
     ImGui::SliderFloat("Move Speed", &camera.MoveSpeed, 1.0f, 20.0f);
+
+    // 景深
+    ImGui::InputFloat("Focal Length", &camera.FocalLength);
 
     ImGui::End();
 }

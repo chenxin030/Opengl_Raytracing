@@ -42,9 +42,6 @@
     <ClCompile Include="src\ForwardShadingPipeline.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="src\DeferredShadingPipeline.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\Shader.h">
@@ -96,9 +93,6 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="src\ForwardShadingPipeline.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="src\DeferredShadingPipeline.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

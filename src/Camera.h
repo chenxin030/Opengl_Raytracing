@@ -17,6 +17,7 @@ public:
     float Pitch = 0.0f;
     float Sensitivity = 0.1f;
     float ZoomSpeed = 2.0f;
+    float FocalLength = 1.0;
 
     void ProcessMovement(glm::vec3 direction, float deltaTime) {
         Position += direction * MoveSpeed * deltaTime;

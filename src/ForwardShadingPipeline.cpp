@@ -1,11 +1,13 @@
 #include "ForwardShadingPipeline.h"
 #include <iostream>
 #include "global.h"
+#include <stb_image.h>
 
 void ForwardShadingPipline::Init()
 {
     InitFWEW();
     InitShdaer();
+    InitBlueNoiseTex();
     InitOutputTex();
     imguiManager.m_Window = window;
     imguiManager.Init();
@@ -32,6 +34,18 @@ void ForwardShadingPipline::InitFWEW()
 
     glfwSetCursorPosCallback(window, mouse_callback);
     glfwSetScrollCallback(window, scroll_callback);
+}
+
+void ForwardShadingPipline::InitBlueNoiseTex()
+{
+    int width, height, channels;
+    unsigned char* data = stbi_load("res/textures/blue_noise.png", &width, &height, &channels, 1);
+
+    glGenTextures(1, &blueNoiseTex);
+    glBindTexture(GL_TEXTURE_2D, blueNoiseTex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, data);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 }
 
 void ForwardShadingPipline::InitShdaer()
@@ -146,8 +160,9 @@ void ForwardShadingPipline::Render()
         raytracingShader.setVec3("cameraUp", camera.Up);
         raytracingShader.setVec3("cameraRight", camera.Right);
         raytracingShader.setFloat("fov", camera.FOV);
+        raytracingShader.setInt("frameCount", frameCount);
+        raytracingShader.setVec2("noiseScale", glm::vec2(1.0f / 1024.0f));
 
-        // °ó¶¨Ìì¿ÕºÐ
         raytracingShader.setBool("useSkybox", imguiManager.IsSkyboxEnabled());
         if (imguiManager.IsSkyboxEnabled()) {
             glActiveTexture(GL_TEXTURE0);

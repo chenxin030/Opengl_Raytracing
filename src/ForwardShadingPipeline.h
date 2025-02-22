@@ -14,6 +14,7 @@ private:
 	// GPU Time Query
 	PerformanceProfiler gProfiler;
 
+	GLuint blueNoiseTex;
 	Shader raytracingShader;
 	// display
 	Shader outputShader;
@@ -47,6 +48,7 @@ public:
 	}
 	void Init();
 	void InitFWEW();
+	void InitBlueNoiseTex();
 	void InitShdaer();
 	void InitOutputTex();
 	void InitBloom();

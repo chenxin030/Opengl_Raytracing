@@ -72,7 +72,6 @@ static void WriteLightParams(std::ofstream& file, const Light& light, const std:
 		<< " " << light.samples;
 }
 
-// SceneIO.cpp（或对应场景加载代码）
 void GenerateAABBForObject(Object& obj) {
     if (obj.type == ObjectType::SPHERE) {
         // 球体AABB：中心±半径
