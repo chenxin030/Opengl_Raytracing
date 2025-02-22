@@ -26,6 +26,9 @@ struct Material {
     float ior;
     float transparency;
     float specular;
+    float subsurfaceScatter;          // 次表面散射强度（0-1）
+    vec3 subsurfaceColor; // 散射颜色
+    float scatterDistance;            // 散射最大距离
 };
 
 struct Object {
@@ -309,6 +312,32 @@ vec2 hammersley(int i, int N) {
     return vec2(float(i)/float(N), haltonSequence(i, 2));
 }
 
+// 体积散射函数（次表面散射）
+vec3 computeSubsurfaceScattering(vec3 P, vec3 N, Material mat) {
+    vec3 sss = vec3(0.0);
+    for(int i=0; i<4; i++) { // 采样次数可根据性能调整
+        // 半球随机采样
+        vec2 rand = hammersley(i, 4);
+        vec3 scatterDir = cosineWeightedHemisphere(rand, N);
+        
+        // 散射光线步进
+        Ray sssRay;
+        sssRay.origin = P + N * 0.001;
+        sssRay.direction = scatterDir;
+        sssRay.depth = 0;
+        
+        // 检测散射路径上的相交
+        Material tempMat;
+        vec3 tempNormal;
+        float t;
+        if(intersectObjects(sssRay, tempMat, tempNormal, t)) {
+            float attenuation = exp(-t / mat.scatterDistance);
+            sss += tempMat.albedo * attenuation;
+        }
+    }
+    return sss * mat.subsurfaceColor * mat.subsurfaceScatter / 4.0;
+}
+
 // 通用PCF实现
 float pcfShadow(vec3 point, vec3 normal, Light light, vec3 lightDir, float lightDistance) {
     float shadow = 0.0;
@@ -469,6 +498,11 @@ vec3 computeLighting(vec3 P, vec3 N, Material mat, vec3 V) {
         
         Lo += computePBR(mat, N, V, L, H, radiance) * shadowFactor;
     }
+    
+    if(mat.subsurfaceScatter > 0.0) {
+        Lo += computeSubsurfaceScattering(P, N, mat);
+    }
+
     return Lo;
 }
 

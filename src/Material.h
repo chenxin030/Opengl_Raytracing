@@ -17,5 +17,8 @@ struct Material {
     alignas(4) float ior = 1.0f;                        // 4字节对齐，占4字节
     alignas(4) float transparency = 0.0f;               // 4字节对齐，占4字节
     alignas(4) float specular = 0.5f;                   // 4字节对齐，占4字节
+    alignas(4) float subsurfaceScatter = 0.0f;          // 次表面散射强度（0-1）
+    alignas(16) glm::vec3 subsurfaceColor = glm::vec3(1.0f); // 散射颜色
+    alignas(4) float scatterDistance = 0.1f;            // 散射最大距离
 };
 
